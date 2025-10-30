@@ -93,10 +93,10 @@ function Library:CreateWindow(title)
     window.closeButton.Size = UDim2.new(0, 35, 0, 35)
     window.closeButton.Position = UDim2.new(1, -40, 0, 5)
     window.closeButton.BackgroundColor3 = Color3.fromRGB(255, 40, 40)
-    window.closeButton.Text = "✕"
+    window.closeButton.Text = "X"
     window.closeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
     window.closeButton.Font = Enum.Font.GothamBold
-    window.closeButton.TextSize = 18
+    window.closeButton.TextSize = 20
     window.closeButton.Parent = window.titleBar
 
     local closeCorner = Instance.new("UICorner")
@@ -249,13 +249,20 @@ function Library:CreateWindow(title)
     window.tabFrame.BackgroundTransparency = 1
     window.tabFrame.Parent = window.mainFrame
 
-    -- Search Box
+    local tabGrid = Instance.new("UIGridLayout")
+    tabGrid.CellSize = UDim2.new(0, 120, 0, 55)
+    tabGrid.CellPadding = UDim2.new(0, 5, 0, 0)
+    tabGrid.SortOrder = Enum.SortOrder.LayoutOrder
+    tabGrid.FillDirection = Enum.FillDirection.Horizontal
+    tabGrid.Parent = window.tabFrame
+
+    -- Search Box (with placeholder, lowered a bit)
     window.searchBox = Instance.new("TextBox")
     window.searchBox.Size = UDim2.new(1, -20, 0, 30)
-    window.searchBox.Position = UDim2.new(0, 10, 0, 100)
+    window.searchBox.Position = UDim2.new(0, 10, 0, 105) -- Lowered by 5px for gap
     window.searchBox.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
-    window.searchBox.Text = ""
-    window.searchBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+    window.searchBox.Text = "Search..."
+    window.searchBox.TextColor3 = Color3.fromRGB(150, 150, 150) -- Placeholder color
     window.searchBox.Font = Enum.Font.Gotham
     window.searchBox.TextSize = 14
     window.searchBox.ClearTextOnFocus = false
@@ -264,6 +271,21 @@ function Library:CreateWindow(title)
     local searchCorner = Instance.new("UICorner")
     searchCorner.CornerRadius = UDim.new(0, 8)
     searchCorner.Parent = window.searchBox
+
+    -- Placeholder handling for search
+    window.searchBox.Focused:Connect(function()
+        if window.searchBox.Text == "Search..." then
+            window.searchBox.Text = ""
+            window.searchBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+        end
+    end)
+
+    window.searchBox.FocusLost:Connect(function()
+        if window.searchBox.Text == "" then
+            window.searchBox.Text = "Search..."
+            window.searchBox.TextColor3 = Color3.fromRGB(150, 150, 150)
+        end
+    end)
 
     -- Notification Container
     window.notifContainer = Instance.new("Frame")
@@ -284,12 +306,13 @@ function Library:CreateWindow(title)
         tab.name = name
         tab.elements = {}
         tab.contentFrame = Instance.new("ScrollingFrame")
-        tab.contentFrame.Size = UDim2.new(1, -20, 1, -130)
+        tab.contentFrame.Size = UDim2.new(1, -20, 1, -155) -- Adjusted for lowered search (30+5 gap +140 start -> -155)
         tab.contentFrame.Position = UDim2.new(0, 10, 0, 140)
         tab.contentFrame.BackgroundTransparency = 1
         tab.contentFrame.ScrollBarThickness = 8
         tab.contentFrame.ScrollBarImageColor3 = Color3.fromRGB(0, 255, 150)
         tab.contentFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+        tab.contentFrame.ScrollingDirection = Enum.ScrollingDirection.Y -- Only vertical scroll
         tab.contentFrame.Parent = window.mainFrame
 
         local listLayout = Instance.new("UIListLayout")
@@ -302,13 +325,11 @@ function Library:CreateWindow(title)
         end)
 
         local tabButton = Instance.new("TextButton")
-        tabButton.Size = UDim2.new(1/#window.tabs, 0, 1, 0)
-        tabButton.Position = UDim2.new((#window.tabs-1)/#window.tabs, 0, 0, 0)
         tabButton.BackgroundColor3 = Color3.fromRGB(25, 25, 40)
         tabButton.Text = name
         tabButton.TextColor3 = Color3.fromRGB(200, 200, 255)
         tabButton.Font = Enum.Font.Gotham
-        tabButton.TextSize = 16
+        tabButton.TextSize = 14 -- Smaller text for tabs
         tabButton.Parent = window.tabFrame
 
         local tabCorner = Instance.new("UICorner")
@@ -316,7 +337,7 @@ function Library:CreateWindow(title)
         tabCorner.Parent = tabButton
 
         local underline = Instance.new("Frame")
-        underline.Size = UDim2.new(0, 0, 0, 3)
+        underline.Size = UDim2.new(1, 0, 0, 3)
         underline.Position = UDim2.new(0, 0, 1, -3)
         underline.BackgroundColor3 = Color3.fromRGB(0, 255, 150)
         underline.BorderSizePixel = 0
@@ -329,7 +350,7 @@ function Library:CreateWindow(title)
         tabButton.MouseButton1Click:Connect(function()
             for _, t in pairs(window.tabs) do
                 TweenService:Create(t.button, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(25, 25, 40)}):Play()
-                TweenService:Create(t.underline, TweenInfo.new(0.3, Enum.EasingStyle.Quart), {Size = UDim2.new(0, 0, 0, 3)}):Play()
+                TweenService:Create(t.underline, TweenInfo.new(0.3, Enum.EasingStyle.Quart), {Size = UDim2.new(1, 0, 0, 0)}):Play()
                 TweenService:Create(t.contentFrame, TweenInfo.new(0.4, Enum.EasingStyle.Back), {Position = UDim2.new(-1, 10, 0, 140)}):Play()
                 t.contentFrame.Visible = false
             end
@@ -355,8 +376,11 @@ function Library:CreateWindow(title)
         end
 
         -- Search for this tab
-        window.searchBox:GetPropertyChangedSignal("Text"):Connect(function()
-            local query = string.lower(window.searchBox.Text)
+        local searchConnection
+        searchConnection = window.searchBox:GetPropertyChangedSignal("Text"):Connect(function()
+            local query = window.searchBox.Text
+            if query == "Search..." then query = "" end
+            query = string.lower(query)
             for _, elem in ipairs(window.searchElements) do
                 if elem and elem.Parent then
                     local matches = (query == "" or string.len(query) < 2) or string.find(string.lower(elem.Name), query)
@@ -364,6 +388,8 @@ function Library:CreateWindow(title)
                 end
             end
         end)
+
+        table.insert(window.connections, searchConnection)
 
         function tab:CreateSlider(name, min, max, default, onChange)
             local sliderFrame = Instance.new("Frame")
@@ -591,6 +617,8 @@ function Library:CreateWindow(title)
 
             local selected = default
             local isOpen = false
+            local baseHeight = 50
+            local openHeight = baseHeight + (#options * 35)
 
             for _, option in ipairs(options) do
                 local optionButton = Instance.new("TextButton")
@@ -610,27 +638,45 @@ function Library:CreateWindow(title)
                     selected = option
                     selectedLabel.Text = name .. ": " .. selected
                     onChange(selected)
-                    TweenService:Create(optionsFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quart), {Size = UDim2.new(1, 0, 0, 0)}):Play()
-                    task.wait(0.3)
-                    optionsFrame.Visible = false
-                    isOpen = false
-                    arrowButton.Text = "▼"
+                    closeDropdown()
                 end)
+            end
+
+            local function closeDropdown()
+                isOpen = false
+                TweenService:Create(dropdownFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quart), {Size = UDim2.new(1, -20, 0, baseHeight)}):Play()
+                TweenService:Create(optionsFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quart), {Size = UDim2.new(1, 0, 0, 0)}):Play()
+                task.wait(0.3)
+                optionsFrame.Visible = false
+                arrowButton.Text = "▼"
             end
 
             arrowButton.MouseButton1Click:Connect(function()
                 isOpen = not isOpen
                 if isOpen then
                     optionsFrame.Visible = true
+                    TweenService:Create(dropdownFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quart), {Size = UDim2.new(1, -20, 0, openHeight)}):Play()
                     TweenService:Create(optionsFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quart), {Size = UDim2.new(1, 0, 0, #options * 35)}):Play()
                     arrowButton.Text = "▲"
                 else
-                    TweenService:Create(optionsFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quart), {Size = UDim2.new(1, 0, 0, 0)}):Play()
-                    task.wait(0.3)
-                    optionsFrame.Visible = false
-                    arrowButton.Text = "▼"
+                    closeDropdown()
                 end
             end)
+
+            -- Close on outside click (basic)
+            local dropdownConn
+            dropdownConn = UserInputService.InputBegan:Connect(function(input)
+                if input.UserInputType == Enum.UserInputType.MouseButton1 and isOpen then
+                    local mousePos = UserInputService:GetMouseLocation()
+                    local absPos = dropdownFrame.AbsolutePosition
+                    local absSize = dropdownFrame.AbsoluteSize
+                    local isInside = (mousePos.X >= absPos.X and mousePos.X <= absPos.X + absSize.X and mousePos.Y >= absPos.Y and mousePos.Y <= absPos.Y + absSize.Y)
+                    if not isInside then
+                        closeDropdown()
+                    end
+                end
+            end)
+            table.insert(window.connections, dropdownConn)
         end
 
         return tab
