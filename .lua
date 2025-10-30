@@ -242,9 +242,9 @@ function Library:CreateWindow(title)
         window.mainFrame.Visible = not window.mainFrame.Visible
     end)
 
-    -- Tab Frame
+    -- Tab Frame (Dynamic height for multiple rows)
     window.tabFrame = Instance.new("Frame")
-    window.tabFrame.Size = UDim2.new(1, 0, 0, 55)
+    window.tabFrame.Size = UDim2.new(1, 0, 0, 55) -- Initial for one row
     window.tabFrame.Position = UDim2.new(0, 0, 0, 45)
     window.tabFrame.BackgroundTransparency = 1
     window.tabFrame.Parent = window.mainFrame
@@ -254,12 +254,30 @@ function Library:CreateWindow(title)
     tabGrid.CellPadding = UDim2.new(0, 5, 0, 0)
     tabGrid.SortOrder = Enum.SortOrder.LayoutOrder
     tabGrid.FillDirection = Enum.FillDirection.Horizontal
+    tabGrid.HorizontalAlignment = Enum.HorizontalAlignment.Center -- Center tabs to avoid overlap
+    tabGrid.VerticalAlignment = Enum.VerticalAlignment.Top
     tabGrid.Parent = window.tabFrame
 
-    -- Search Box (with placeholder, lowered a bit)
+    -- Function to update tabFrame height based on number of tabs (supports up to 2 rows without clipping)
+    local function updateTabFrameHeight()
+        local numTabs = #window.tabs
+        local tabsPerRow = math.floor(680 / 125) -- Approx 5 tabs per row (700 width - margins / (120+5))
+        local numRows = math.ceil(numTabs / tabsPerRow)
+        local newHeight = numRows * 55 + (numRows - 1) * 5 -- Padding between rows
+        window.tabFrame.Size = UDim2.new(1, 0, 0, newHeight)
+        -- Adjust contentFrame position and size accordingly
+        for _, tab in pairs(window.tabs) do
+            tab.contentFrame.Position = UDim2.new(0, 10, 0, 45 + newHeight + 5) -- Gap after tabs
+            tab.contentFrame.Size = UDim2.new(1, -20, 1, - (50 + newHeight + 5)) -- Adjust height
+        end
+        -- Adjust search box position
+        window.searchBox.Position = UDim2.new(0, 10, 0, 45 + newHeight + 10) -- Gap after tabs
+    end
+
+    -- Search Box (with placeholder, positioned after tabs)
     window.searchBox = Instance.new("TextBox")
     window.searchBox.Size = UDim2.new(1, -20, 0, 30)
-    window.searchBox.Position = UDim2.new(0, 10, 0, 105) -- Lowered by 5px for gap
+    window.searchBox.Position = UDim2.new(0, 10, 0, 105) -- Initial, will be updated
     window.searchBox.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
     window.searchBox.Text = "Search..."
     window.searchBox.TextColor3 = Color3.fromRGB(150, 150, 150) -- Placeholder color
@@ -306,8 +324,8 @@ function Library:CreateWindow(title)
         tab.name = name
         tab.elements = {}
         tab.contentFrame = Instance.new("ScrollingFrame")
-        tab.contentFrame.Size = UDim2.new(1, -20, 1, -155) -- Adjusted for lowered search (30+5 gap +140 start -> -155)
-        tab.contentFrame.Position = UDim2.new(0, 10, 0, 140)
+        tab.contentFrame.Size = UDim2.new(1, -20, 1, -155) -- Initial, will be updated
+        tab.contentFrame.Position = UDim2.new(0, 10, 0, 140) -- Initial, will be updated
         tab.contentFrame.BackgroundTransparency = 1
         tab.contentFrame.ScrollBarThickness = 8
         tab.contentFrame.ScrollBarImageColor3 = Color3.fromRGB(0, 255, 150)
@@ -351,11 +369,11 @@ function Library:CreateWindow(title)
             for _, t in pairs(window.tabs) do
                 TweenService:Create(t.button, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(25, 25, 40)}):Play()
                 TweenService:Create(t.underline, TweenInfo.new(0.3, Enum.EasingStyle.Quart), {Size = UDim2.new(1, 0, 0, 0)}):Play()
-                TweenService:Create(t.contentFrame, TweenInfo.new(0.4, Enum.EasingStyle.Back), {Position = UDim2.new(-1, 10, 0, 140)}):Play()
+                TweenService:Create(t.contentFrame, TweenInfo.new(0.4, Enum.EasingStyle.Back), {Position = UDim2.new(-1, 10, 0, tab.contentFrame.Position.Y.Offset)}):Play()
                 t.contentFrame.Visible = false
             end
             tab.contentFrame.Visible = true
-            TweenService:Create(tab.contentFrame, TweenInfo.new(0.4, Enum.EasingStyle.Back), {Position = UDim2.new(0, 10, 0, 140)}):Play()
+            TweenService:Create(tab.contentFrame, TweenInfo.new(0.4, Enum.EasingStyle.Back), {Position = UDim2.new(0, 10, 0, tab.contentFrame.Position.Y.Offset)}):Play()
             TweenService:Create(tabButton, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(40, 40, 60)}):Play()
             TweenService:Create(underline, TweenInfo.new(0.3, Enum.EasingStyle.Quart), {Size = UDim2.new(1, 0, 0, 3)}):Play()
             window.currentTab = tab
@@ -366,13 +384,16 @@ function Library:CreateWindow(title)
         tab.underline = underline
         table.insert(window.tabs, tab)
 
+        -- Update tab frame height after adding tab
+        updateTabFrameHeight()
+
         if #window.tabs == 1 then
             tab.contentFrame.Visible = true
             window.currentTab = tab
             window.searchElements = tab.elements
         else
             tab.contentFrame.Visible = false
-            tab.contentFrame.Position = UDim2.new(-1, 10, 0, 140)
+            tab.contentFrame.Position = UDim2.new(-1, 10, 0, tab.contentFrame.Position.Y.Offset)
         end
 
         -- Search for this tab
@@ -598,13 +619,14 @@ function Library:CreateWindow(title)
 
             local optionsFrame = Instance.new("Frame")
             optionsFrame.Size = UDim2.new(1, 0, 0, 0)
-            optionsFrame.Position = UDim2.new(0, 0, 1, 0)
+            optionsFrame.Position = UDim2.new(0, 0, 1, 5) -- Small gap from base
             optionsFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
             optionsFrame.BackgroundTransparency = 0.1
             optionsFrame.BorderSizePixel = 0
             optionsFrame.ClipsDescendants = true
             optionsFrame.Visible = false
             optionsFrame.Parent = dropdownFrame
+            optionsFrame.ZIndex = 10 -- Higher Z for options
 
             local optionsCorner = Instance.new("UICorner")
             optionsCorner.CornerRadius = UDim.new(0, 10)
@@ -612,23 +634,25 @@ function Library:CreateWindow(title)
 
             local optionsList = Instance.new("UIListLayout")
             optionsList.SortOrder = Enum.SortOrder.LayoutOrder
-            optionsList.Padding = UDim.new(0, 5)
+            optionsList.Padding = UDim.new(0, 2) -- Smaller padding to fit better
             optionsList.Parent = optionsFrame
 
             local selected = default
             local isOpen = false
             local baseHeight = 50
-            local openHeight = baseHeight + (#options * 35)
+            local optionHeight = 32 -- Adjusted for better fit
+            local openHeight = baseHeight + (#options * optionHeight) + 5 -- Gap included
 
-            for _, option in ipairs(options) do
+            for i, option in ipairs(options) do
                 local optionButton = Instance.new("TextButton")
-                optionButton.Size = UDim2.new(1, 0, 0, 30)
+                optionButton.Size = UDim2.new(1, 0, 0, optionHeight)
                 optionButton.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
                 optionButton.Text = option
                 optionButton.TextColor3 = Color3.fromRGB(255, 255, 255)
                 optionButton.Font = Enum.Font.Gotham
                 optionButton.TextSize = 14
                 optionButton.Parent = optionsFrame
+                optionButton.ZIndex = 11
 
                 local optCorner = Instance.new("UICorner")
                 optCorner.CornerRadius = UDim.new(0, 6)
@@ -642,35 +666,42 @@ function Library:CreateWindow(title)
                 end)
             end
 
+            -- Update canvas size when dropdown opens/closes
+            local function updateCanvas()
+                listLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Fire() -- Trigger update
+            end
+
             local function closeDropdown()
                 isOpen = false
+                optionsFrame.Visible = false
                 TweenService:Create(dropdownFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quart), {Size = UDim2.new(1, -20, 0, baseHeight)}):Play()
                 TweenService:Create(optionsFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quart), {Size = UDim2.new(1, 0, 0, 0)}):Play()
-                task.wait(0.3)
-                optionsFrame.Visible = false
                 arrowButton.Text = "▼"
+                updateCanvas() -- Ensure canvas updates after close
             end
 
             arrowButton.MouseButton1Click:Connect(function()
                 isOpen = not isOpen
                 if isOpen then
                     optionsFrame.Visible = true
+                    TweenService:Create(optionsFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quart), {Size = UDim2.new(1, 0, 0, #options * optionHeight)}):Play()
                     TweenService:Create(dropdownFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quart), {Size = UDim2.new(1, -20, 0, openHeight)}):Play()
-                    TweenService:Create(optionsFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quart), {Size = UDim2.new(1, 0, 0, #options * 35)}):Play()
                     arrowButton.Text = "▲"
+                    updateCanvas() -- Update canvas when open
                 else
                     closeDropdown()
                 end
             end)
 
-            -- Close on outside click (basic)
+            -- Close on outside click (improved)
             local dropdownConn
             dropdownConn = UserInputService.InputBegan:Connect(function(input)
                 if input.UserInputType == Enum.UserInputType.MouseButton1 and isOpen then
                     local mousePos = UserInputService:GetMouseLocation()
                     local absPos = dropdownFrame.AbsolutePosition
                     local absSize = dropdownFrame.AbsoluteSize
-                    local isInside = (mousePos.X >= absPos.X and mousePos.X <= absPos.X + absSize.X and mousePos.Y >= absPos.Y and mousePos.Y <= absPos.Y + absSize.Y)
+                    local isInside = (mousePos.X >= absPos.X and mousePos.X <= absPos.X + absSize.X and 
+                                      mousePos.Y >= absPos.Y and mousePos.Y <= absPos.Y + absSize.Y)
                     if not isInside then
                         closeDropdown()
                     end
@@ -725,8 +756,9 @@ function Library:CreateWindow(title)
         window.activeNotifs = window.activeNotifs - 1
     end
 
-    -- Handle Keybinds
-    UserInputService.InputBegan:Connect(function(input, processed)
+    -- Handle Keybinds (Improved outside click detection for reset to None)
+    local keybindOutsideConn
+    keybindOutsideConn = UserInputService.InputBegan:Connect(function(input, processed)
         if input.UserInputType == Enum.UserInputType.Keyboard and not processed then
             if window.keybindListening then
                 local kc = input.KeyCode
@@ -751,16 +783,17 @@ function Library:CreateWindow(title)
             elseif window.activeKeybinds[input.KeyCode] then
                 window.activeKeybinds[input.KeyCode]()
             end
-        elseif input.UserInputType == Enum.UserInputType.MouseButton1 and not processed and window.keybindListening then
+        elseif input.UserInputType == Enum.UserInputType.MouseButton1 and window.keybindListening and not processed then
             local mousePos = UserInputService:GetMouseLocation()
             local absPos = window.keybindListening.keybind.AbsolutePosition
             local absSize = window.keybindListening.keybind.AbsoluteSize
-            local isInside = (mousePos.X >= absPos.X and mousePos.X <= absPos.X + absSize.X and mousePos.Y >= absPos.Y and mousePos.Y <= absPos.Y + absSize.Y)
+            local isInside = (mousePos.X >= absPos.X and mousePos.X <= absPos.X + absSize.X and 
+                              mousePos.Y >= absPos.Y and mousePos.Y <= absPos.Y + absSize.Y)
             if not isInside then
                 local boundName = window.keybindListening.name
                 window.keybindListening.keybind.Text = "None"
                 window.keybindListening.keybind.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
-                if window.toggleData[boundName].boundKey then
+                if window.toggleData[boundName] and window.toggleData[boundName].boundKey then
                     window.activeKeybinds[window.toggleData[boundName].boundKey] = nil
                     window.toggleData[boundName].boundKey = nil
                 end
@@ -768,6 +801,7 @@ function Library:CreateWindow(title)
             end
         end
     end)
+    table.insert(window.connections, keybindOutsideConn)
 
     -- Handle Slider Dragging
     UserInputService.InputChanged:Connect(function(input)
