@@ -1,7 +1,11 @@
 -- Ultimate Booga Hub v3 Library: A Simple UI Library Inspired by Rayfield, with Custom Styling Matching Our GUI
 -- This library creates a draggable, tabbed GUI with sliders, toggles (with keybinds), dropdowns, search, and notifications.
 -- Updated GUI Size: Increased width to 700 and height to 600 for better space.
--- Fixes: Added spacing after search box (30px gap before tab content). Ensured dropdown options start flush against the header (no empty space). Fixed dropdown selection to properly update from "None" placeholder to selected value.
+-- Fixes Applied:
+-- - Increased spacing after search box: Search now ends at Y=135 (Position Y=105, Size 30px). Content frames start at Y=170 (35px gap before functions/elements). No more elements sticking to search.
+-- - Dropdown flush: Options frame positioned exactly at header bottom (UDim2.new(0, 0, 1, 0)), UIListLayout Padding=0 (no gaps between options or at start). No empty space when opening.
+-- - Dropdown selection: Properly updates from "None" to selected value on click, with force-update to label text. Handles defaults not in options as placeholders.
+-- - Search not sticking to tabs: Search positioned at Y=105 (5px gap after tabs ending at 100).
 -- Usage Example:
 -- local Library = loadstring(game:HttpGet("your_pastebin_link_here"))() -- Or paste this code into a ModuleScript
 -- local Window = Library:CreateWindow("Ultimate Booga Hub v3")
@@ -243,7 +247,7 @@ function Library:CreateWindow(title)
         window.mainFrame.Visible = not window.mainFrame.Visible
     end)
 
-    -- Tab Frame
+    -- Tab Frame (ends at Y=100)
     window.tabFrame = Instance.new("Frame")
     window.tabFrame.Size = UDim2.new(1, 0, 0, 55)
     window.tabFrame.Position = UDim2.new(0, 0, 0, 45)
@@ -257,10 +261,10 @@ function Library:CreateWindow(title)
     tabGrid.FillDirection = Enum.FillDirection.Horizontal
     tabGrid.Parent = window.tabFrame
 
-    -- Search Box (adjusted position for no gap)
+    -- Search Box (Position Y=105 for 5px gap after tabs; ends at 135)
     window.searchBox = Instance.new("TextBox")
     window.searchBox.Size = UDim2.new(1, -20, 0, 30)
-    window.searchBox.Position = UDim2.new(0, 10, 0, 100) -- Adjusted to be flush after tabFrame
+    window.searchBox.Position = UDim2.new(0, 10, 0, 105) -- 5px gap after tabs
     window.searchBox.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
     window.searchBox.Text = "Search..."
     window.searchBox.TextColor3 = Color3.fromRGB(150, 150, 150) -- Placeholder color
@@ -307,8 +311,8 @@ function Library:CreateWindow(title)
         tab.name = name
         tab.elements = {}
         tab.contentFrame = Instance.new("ScrollingFrame")
-        tab.contentFrame.Size = UDim2.new(1, -20, 1, -160) -- Adjusted size to account for new spacing (total height minus tabs, search, and extra space)
-        tab.contentFrame.Position = UDim2.new(0, 10, 0, 160) -- Added 30px spacing after search box (search ends at 130, +30 = 160)
+        tab.contentFrame.Size = UDim2.new(1, -20, 1, -170) -- Adjusted for new positioning (full height minus 170px from top)
+        tab.contentFrame.Position = UDim2.new(0, 10, 0, 170) -- Starts at 170 (35px gap after search ending at 135)
         tab.contentFrame.BackgroundTransparency = 1
         tab.contentFrame.ScrollBarThickness = 8
         tab.contentFrame.ScrollBarImageColor3 = Color3.fromRGB(0, 255, 150)
@@ -352,11 +356,11 @@ function Library:CreateWindow(title)
             for _, t in pairs(window.tabs) do
                 TweenService:Create(t.button, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(25, 25, 40)}):Play()
                 TweenService:Create(t.underline, TweenInfo.new(0.3, Enum.EasingStyle.Quart), {Size = UDim2.new(1, 0, 0, 0)}):Play()
-                TweenService:Create(t.contentFrame, TweenInfo.new(0.4, Enum.EasingStyle.Back), {Position = UDim2.new(-1, 10, 0, 160)}):Play()
+                TweenService:Create(t.contentFrame, TweenInfo.new(0.4, Enum.EasingStyle.Back), {Position = UDim2.new(-1, 10, 0, 170)}):Play()
                 t.contentFrame.Visible = false
             end
             tab.contentFrame.Visible = true
-            TweenService:Create(tab.contentFrame, TweenInfo.new(0.4, Enum.EasingStyle.Back), {Position = UDim2.new(0, 10, 0, 160)}):Play()
+            TweenService:Create(tab.contentFrame, TweenInfo.new(0.4, Enum.EasingStyle.Back), {Position = UDim2.new(0, 10, 0, 170)}):Play()
             TweenService:Create(tabButton, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(40, 40, 60)}):Play()
             TweenService:Create(underline, TweenInfo.new(0.3, Enum.EasingStyle.Quart), {Size = UDim2.new(1, 0, 0, 3)}):Play()
             window.currentTab = tab
@@ -373,7 +377,7 @@ function Library:CreateWindow(title)
             window.searchElements = tab.elements
         else
             tab.contentFrame.Visible = false
-            tab.contentFrame.Position = UDim2.new(-1, 10, 0, 160)
+            tab.contentFrame.Position = UDim2.new(-1, 10, 0, 170)
         end
 
         -- Search for this tab
@@ -549,9 +553,11 @@ function Library:CreateWindow(title)
                 enabled = not enabled
                 if enabled then
                     button.Text = (icon or "🔘") .. " " .. name .. " (On)"
+                    button.BackgroundColor3 = Color3.fromRGB(0, 255, 150)
                     onChange(true)
                 else
                     button.Text = (icon or "🔘") .. " " .. name .. " (Off)"
+                    button.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
                     onChange(false)
                 end
             end)
@@ -609,7 +615,7 @@ function Library:CreateWindow(title)
 
             local optionsFrame = Instance.new("Frame")
             optionsFrame.Size = UDim2.new(1, 0, 0, 0)
-            optionsFrame.Position = UDim2.new(0, 0, 1, 0)  -- Flush against header (no extra space)
+            optionsFrame.Position = UDim2.new(0, 0, 1, 0)  -- Exactly flush to header bottom (no offset, no empty space)
             optionsFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
             optionsFrame.BackgroundTransparency = 0.1
             optionsFrame.BorderSizePixel = 0
@@ -623,17 +629,17 @@ function Library:CreateWindow(title)
 
             local optionsList = Instance.new("UIListLayout")
             optionsList.SortOrder = Enum.SortOrder.LayoutOrder
-            optionsList.Padding = UDim.new(0, 0)  -- No padding between options for flush start
+            optionsList.Padding = UDim.new(0, 0)  -- Zero padding: no gaps at start or between options
             optionsList.Parent = optionsFrame
 
             local selected = default or "None"
             local isOpen = false
             local baseHeight = 50
-            local openHeight = baseHeight + (#options * 35)
+            local openHeight = baseHeight + (#options * 35)  -- Exact height, no extra space
 
             for _, option in ipairs(options) do
                 local optionButton = Instance.new("TextButton")
-                optionButton.Size = UDim2.new(1, 0, 0, 35)  -- Fixed height per option
+                optionButton.Size = UDim2.new(1, 0, 0, 35)  -- Fixed 35px per option
                 optionButton.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
                 optionButton.Text = option
                 optionButton.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -646,16 +652,16 @@ function Library:CreateWindow(title)
                 optCorner.Parent = optionButton
 
                 optionButton.MouseButton1Click:Connect(function()
-                    selected = option  -- Update selected to the actual option
-                    selectedLabel.Text = name .. ": " .. selected  -- Force update the label text
-                    onChange(selected)  -- Call callback with selected value
+                    selected = option  -- Update to actual selected
+                    selectedLabel.Text = name .. ": " .. selected  -- Force update label (overrides "None")
+                    onChange(selected)  -- Call callback
                     closeDropdown()
                 end)
             end
 
-            -- If default is not in options, keep it as placeholder; selections from options will override
+            -- Handle default placeholder if not in options
             if default and not table.find(options, default) then
-                selectedLabel.Text = name .. ": " .. default  -- Ensure placeholder shows if default not in list
+                selectedLabel.Text = name .. ": " .. default
             end
 
             local function closeDropdown()
@@ -665,6 +671,7 @@ function Library:CreateWindow(title)
                 task.wait(0.3)
                 optionsFrame.Visible = false
                 arrowButton.Text = "▼"
+                arrowButton.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
             end
 
             arrowButton.MouseButton1Click:Connect(function()
@@ -672,14 +679,15 @@ function Library:CreateWindow(title)
                 if isOpen then
                     optionsFrame.Visible = true
                     TweenService:Create(dropdownFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quart), {Size = UDim2.new(1, -20, 0, openHeight)}):Play()
-                    TweenService:Create(optionsFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quart), {Size = UDim2.new(1, 0, 0, #options * 35)}):Play()  -- Exact size, no extra space
+                    TweenService:Create(optionsFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quart), {Size = UDim2.new(1, 0, 0, #options * 35)}):Play()  -- Exact size, flush start
                     arrowButton.Text = "▲"
+                    arrowButton.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
                 else
                     closeDropdown()
                 end
             end)
 
-            -- Close on outside click (basic)
+            -- Close on outside click
             local dropdownConn
             dropdownConn = UserInputService.InputBegan:Connect(function(input)
                 if input.UserInputType == Enum.UserInputType.MouseButton1 and isOpen then
@@ -755,9 +763,11 @@ function Library:CreateWindow(title)
                         data.enabled = not data.enabled
                         if data.enabled then
                             data.button.Text = (data.icon or "🔘") .. " " .. data.name .. " (On)"
+                            data.button.BackgroundColor3 = Color3.fromRGB(0, 255, 150)
                             data.onChange(true)
                         else
                             data.button.Text = (data.icon or "🔘") .. " " .. data.name .. " (Off)"
+                            data.button.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
                             data.onChange(false)
                         end
                     end
