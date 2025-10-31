@@ -1,6 +1,7 @@
 -- Ultimate Booga Hub v3 Library: A Simple UI Library Inspired by Rayfield, with Custom Styling Matching Our GUI
 -- This library creates a draggable, tabbed GUI with sliders, toggles (with keybinds), dropdowns, search, and notifications.
 -- Updated GUI Size: Increased width to 700 and height to 600 for better space.
+-- Fixes: Added spacing after search box (30px gap before tab content). Ensured dropdown options start flush against the header (no empty space). Fixed dropdown selection to properly update from "None" placeholder to selected value.
 -- Usage Example:
 -- local Library = loadstring(game:HttpGet("your_pastebin_link_here"))() -- Or paste this code into a ModuleScript
 -- local Window = Library:CreateWindow("Ultimate Booga Hub v3")
@@ -306,8 +307,8 @@ function Library:CreateWindow(title)
         tab.name = name
         tab.elements = {}
         tab.contentFrame = Instance.new("ScrollingFrame")
-        tab.contentFrame.Size = UDim2.new(1, -20, 1, -130) -- Adjusted for flush positioning
-        tab.contentFrame.Position = UDim2.new(0, 10, 0, 130) -- Adjusted to start right after searchBox
+        tab.contentFrame.Size = UDim2.new(1, -20, 1, -160) -- Adjusted size to account for new spacing (total height minus tabs, search, and extra space)
+        tab.contentFrame.Position = UDim2.new(0, 10, 0, 160) -- Added 30px spacing after search box (search ends at 130, +30 = 160)
         tab.contentFrame.BackgroundTransparency = 1
         tab.contentFrame.ScrollBarThickness = 8
         tab.contentFrame.ScrollBarImageColor3 = Color3.fromRGB(0, 255, 150)
@@ -351,11 +352,11 @@ function Library:CreateWindow(title)
             for _, t in pairs(window.tabs) do
                 TweenService:Create(t.button, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(25, 25, 40)}):Play()
                 TweenService:Create(t.underline, TweenInfo.new(0.3, Enum.EasingStyle.Quart), {Size = UDim2.new(1, 0, 0, 0)}):Play()
-                TweenService:Create(t.contentFrame, TweenInfo.new(0.4, Enum.EasingStyle.Back), {Position = UDim2.new(-1, 10, 0, 130)}):Play()
+                TweenService:Create(t.contentFrame, TweenInfo.new(0.4, Enum.EasingStyle.Back), {Position = UDim2.new(-1, 10, 0, 160)}):Play()
                 t.contentFrame.Visible = false
             end
             tab.contentFrame.Visible = true
-            TweenService:Create(tab.contentFrame, TweenInfo.new(0.4, Enum.EasingStyle.Back), {Position = UDim2.new(0, 10, 0, 130)}):Play()
+            TweenService:Create(tab.contentFrame, TweenInfo.new(0.4, Enum.EasingStyle.Back), {Position = UDim2.new(0, 10, 0, 160)}):Play()
             TweenService:Create(tabButton, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(40, 40, 60)}):Play()
             TweenService:Create(underline, TweenInfo.new(0.3, Enum.EasingStyle.Quart), {Size = UDim2.new(1, 0, 0, 3)}):Play()
             window.currentTab = tab
@@ -372,7 +373,7 @@ function Library:CreateWindow(title)
             window.searchElements = tab.elements
         else
             tab.contentFrame.Visible = false
-            tab.contentFrame.Position = UDim2.new(-1, 10, 0, 130)
+            tab.contentFrame.Position = UDim2.new(-1, 10, 0, 160)
         end
 
         -- Search for this tab
@@ -585,7 +586,7 @@ function Library:CreateWindow(title)
             local selectedLabel = Instance.new("TextLabel")
             selectedLabel.Size = UDim2.new(0.8, 0, 1, 0)
             selectedLabel.BackgroundTransparency = 1
-            selectedLabel.Text = name .. ": " .. default
+            selectedLabel.Text = name .. ": " .. (default or "None")  -- Ensure default shows properly, even if not in options
             selectedLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
             selectedLabel.Font = Enum.Font.Gotham
             selectedLabel.TextSize = 15
@@ -608,7 +609,7 @@ function Library:CreateWindow(title)
 
             local optionsFrame = Instance.new("Frame")
             optionsFrame.Size = UDim2.new(1, 0, 0, 0)
-            optionsFrame.Position = UDim2.new(0, 0, 1, 0)
+            optionsFrame.Position = UDim2.new(0, 0, 1, 0)  -- Flush against header (no extra space)
             optionsFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
             optionsFrame.BackgroundTransparency = 0.1
             optionsFrame.BorderSizePixel = 0
@@ -622,17 +623,17 @@ function Library:CreateWindow(title)
 
             local optionsList = Instance.new("UIListLayout")
             optionsList.SortOrder = Enum.SortOrder.LayoutOrder
-            optionsList.Padding = UDim.new(0, 5)
+            optionsList.Padding = UDim.new(0, 0)  -- No padding between options for flush start
             optionsList.Parent = optionsFrame
 
-            local selected = default
+            local selected = default or "None"
             local isOpen = false
             local baseHeight = 50
             local openHeight = baseHeight + (#options * 35)
 
             for _, option in ipairs(options) do
                 local optionButton = Instance.new("TextButton")
-                optionButton.Size = UDim2.new(1, 0, 0, 30)
+                optionButton.Size = UDim2.new(1, 0, 0, 35)  -- Fixed height per option
                 optionButton.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
                 optionButton.Text = option
                 optionButton.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -645,11 +646,16 @@ function Library:CreateWindow(title)
                 optCorner.Parent = optionButton
 
                 optionButton.MouseButton1Click:Connect(function()
-                    selected = option
-                    selectedLabel.Text = name .. ": " .. selected
-                    onChange(selected)
+                    selected = option  -- Update selected to the actual option
+                    selectedLabel.Text = name .. ": " .. selected  -- Force update the label text
+                    onChange(selected)  -- Call callback with selected value
                     closeDropdown()
                 end)
+            end
+
+            -- If default is not in options, keep it as placeholder; selections from options will override
+            if default and not table.find(options, default) then
+                selectedLabel.Text = name .. ": " .. default  -- Ensure placeholder shows if default not in list
             end
 
             local function closeDropdown()
@@ -666,7 +672,7 @@ function Library:CreateWindow(title)
                 if isOpen then
                     optionsFrame.Visible = true
                     TweenService:Create(dropdownFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quart), {Size = UDim2.new(1, -20, 0, openHeight)}):Play()
-                    TweenService:Create(optionsFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quart), {Size = UDim2.new(1, 0, 0, #options * 35)}):Play()
+                    TweenService:Create(optionsFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quart), {Size = UDim2.new(1, 0, 0, #options * 35)}):Play()  -- Exact size, no extra space
                     arrowButton.Text = "▲"
                 else
                     closeDropdown()
