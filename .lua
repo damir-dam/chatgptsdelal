@@ -2,10 +2,13 @@
 -- This library creates a draggable, tabbed GUI with sliders, toggles (with keybinds), dropdowns, search, and notifications.
 -- Updated GUI Size: 700x600 for better space.
 -- Fixes Applied:
--- - Dropdown: Fixed empty space on open - optionsFrame positioned exactly at (0,0,1,0) with UIListLayout.Padding = UDim.new(0,0) for zero gaps. First option starts flush at top.
+-- - Dropdown: Fixed empty space on open - optionsFrame positioned exactly at (0,0,1,0) with UIListLayout.Padding = UDim.new(0,0) for zero gaps. First option starts flush at top. Used exact sizing based on #options * 35 for no empty space.
 -- - Dropdown selection: Fixed updating text for every selection (not just first). selected variable properly updated and label forced to refresh on every click. Handles "None" default and ensures any choice (even dynamic) shows correctly as "Name: SelectedPlayer".
--- - Notifications: Added/improved to match Rayfield style - appear bottom-right, slide in from right with smooth animation, semi-transparent with UIGradient and UIStroke for modern look. Auto-remove after 3s, max 5 at once. Icons on left, text wrapped on right.
+-- - Notifications: Added/improved to match Rayfield style - appear bottom-right, slide in from right with smooth animation, semi-transparent with UIGradient and UIStroke for modern look. Auto-remove after 3s, max 5 at once. Icons on left, text wrapped on right. Backgrounds adjusted slightly lighter for better text visibility.
 -- - Search and spacing: Retained previous fixes (35px gap after search, content at Y=170).
+-- - Removed toggle square: GUI now opens directly via :Open(), no extra on-screen element, everything ready immediately without "pinging" or delays.
+-- - Text visibility: Adjusted backgrounds (e.g., toggle disabled to 60,60,70; enabled green toned down to 0,200,100; dropdown elements to 35-55 grays; notifications to 30,30,40) so white text appears brighter/clearer against them. No other changes.
+-- - Kept all UIStroke outlines as requested.
 -- Usage: local Library = loadstring(game:HttpGet("your_link"))(); local Window = Library:CreateWindow("Hub"); etc.
 
 local TweenService = game:GetService("TweenService")
@@ -193,57 +196,6 @@ function Library:CreateWindow(title)
             local delta = input.Position - dragStart
             window.mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
         end
-    end)
-
-    -- Toggle Square
-    window.toggleSquare = Instance.new("TextButton")
-    window.toggleSquare.Size = UDim2.new(0, 60, 0, 60)
-    window.toggleSquare.Position = UDim2.new(0, 10, 0.5, -30)
-    window.toggleSquare.BackgroundColor3 = Color3.fromRGB(0, 255, 150)
-    window.toggleSquare.Text = "🚀"
-    window.toggleSquare.TextColor3 = Color3.fromRGB(255, 255, 255)
-    window.toggleSquare.Font = Enum.Font.GothamBold
-    window.toggleSquare.TextSize = 24
-    window.toggleSquare.Parent = window.screenGui
-
-    local squareCorner = Instance.new("UICorner")
-    squareCorner.CornerRadius = UDim.new(0, 10)
-    squareCorner.Parent = window.toggleSquare
-
-    -- Animation for Toggle Square
-    local function animateSquare()
-        while window.toggleSquare.Parent do
-            TweenService:Create(window.toggleSquare, TweenInfo.new(1, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {Size = UDim2.new(0, 65, 0, 65)}):Play()
-            task.wait(1)
-            TweenService:Create(window.toggleSquare, TweenInfo.new(1, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {Size = UDim2.new(0, 60, 0, 60)}):Play()
-            task.wait(1)
-        end
-    end
-    task.spawn(animateSquare)
-
-    -- Dragging for Toggle Square
-    local draggingSquare, squareDragStart, squareStartPos
-    window.toggleSquare.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            draggingSquare = true
-            squareDragStart = input.Position
-            squareStartPos = window.toggleSquare.Position
-        end
-    end)
-    UserInputService.InputChanged:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseMovement and draggingSquare then
-            local delta = input.Position - squareDragStart
-            window.toggleSquare.Position = UDim2.new(squareStartPos.X.Scale, squareStartPos.X.Offset + delta.X, squareStartPos.Y.Scale, squareStartPos.Y.Offset + delta.Y)
-        end
-    end)
-    UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 and draggingSquare then
-            draggingSquare = false
-        end
-    end)
-
-    window.toggleSquare.MouseButton1Click:Connect(function()
-        window.mainFrame.Visible = not window.mainFrame.Visible
     end)
 
     -- Tab Frame (ends at Y=100)
@@ -529,7 +481,7 @@ function Library:CreateWindow(title)
 
             local button = Instance.new("TextButton")
             button.Size = UDim2.new(0.7, 0, 1, 0)
-            button.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+            button.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
             button.Text = (icon or "🔘") .. " " .. name .. " (Off)"
             button.TextColor3 = Color3.fromRGB(255, 255, 255)
             button.Font = Enum.Font.GothamBold
@@ -564,11 +516,11 @@ function Library:CreateWindow(title)
                 enabled = not enabled
                 if enabled then
                     button.Text = (icon or "🔘") .. " " .. name .. " (On)"
-                    button.BackgroundColor3 = Color3.fromRGB(0, 255, 150)
+                    button.BackgroundColor3 = Color3.fromRGB(0, 200, 100)
                     onChange(true)
                 else
                     button.Text = (icon or "🔘") .. " " .. name .. " (Off)"
-                    button.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+                    button.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
                     onChange(false)
                 end
             end)
@@ -592,7 +544,7 @@ function Library:CreateWindow(title)
 
             local headerFrame = Instance.new("Frame")
             headerFrame.Size = UDim2.new(1, 0, 0, 50)
-            headerFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+            headerFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
             headerFrame.BorderSizePixel = 0
             headerFrame.Parent = dropdownFrame
 
@@ -619,7 +571,7 @@ function Library:CreateWindow(title)
             local arrowButton = Instance.new("TextButton")
             arrowButton.Size = UDim2.new(0.15, 0, 1, 0)
             arrowButton.Position = UDim2.new(0.85, 0, 0, 0)
-            arrowButton.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+            arrowButton.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
             arrowButton.Text = "▼"
             arrowButton.TextColor3 = Color3.fromRGB(255, 255, 255)
             arrowButton.Font = Enum.Font.GothamBold
@@ -633,7 +585,7 @@ function Library:CreateWindow(title)
             local optionsFrame = Instance.new("Frame")
             optionsFrame.Size = UDim2.new(1, 0, 0, 0)
             optionsFrame.Position = UDim2.new(0, 0, 1, 0)  -- Flush to header bottom, no offset/empty space
-            optionsFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
+            optionsFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 40)
             optionsFrame.BackgroundTransparency = 0.1
             optionsFrame.BorderSizePixel = 0
             optionsFrame.ClipsDescendants = true
@@ -667,7 +619,7 @@ function Library:CreateWindow(title)
             for i, option in ipairs(options) do
                 local optionButton = Instance.new("TextButton")
                 optionButton.Size = UDim2.new(1, 0, 0, 35)
-                optionButton.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+                optionButton.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
                 optionButton.Text = option
                 optionButton.TextColor3 = Color3.fromRGB(255, 255, 255)
                 optionButton.Font = Enum.Font.Gotham
@@ -694,10 +646,10 @@ function Library:CreateWindow(title)
 
                 -- Hover effect
                 optionButton.MouseEnter:Connect(function()
-                    TweenService:Create(optionButton, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(50, 50, 60)}):Play()
+                    TweenService:Create(optionButton, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(55, 55, 65)}):Play()
                 end)
                 optionButton.MouseLeave:Connect(function()
-                    TweenService:Create(optionButton, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(40, 40, 50)}):Play()
+                    TweenService:Create(optionButton, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(45, 45, 55)}):Play()
                 end)
             end
 
@@ -714,7 +666,7 @@ function Library:CreateWindow(title)
                 task.wait(0.3)
                 optionsFrame.Visible = false
                 arrowButton.Text = "▼"
-                arrowButton.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+                arrowButton.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
             end
 
             arrowButton.MouseButton1Click:Connect(function()
@@ -725,7 +677,7 @@ function Library:CreateWindow(title)
                     TweenService:Create(dropdownFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quart), {Size = UDim2.new(1, -20, 0, openHeight)}):Play()
                     TweenService:Create(optionsFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quart), {Size = UDim2.new(1, 0, 0, #options * 35)}):Play()
                     arrowButton.Text = "▲"
-                    arrowButton.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+                    arrowButton.BackgroundColor3 = Color3.fromRGB(55, 55, 65)
                 else
                     closeDropdown()
                 end
@@ -756,7 +708,7 @@ function Library:CreateWindow(title)
         local notif = Instance.new("Frame")
         notif.Size = UDim2.new(1, 0, 0, 60)
         notif.Position = UDim2.new(1, 0, 0, 0)  -- Start off-screen right
-        notif.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+        notif.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
         notif.BackgroundTransparency = 0.2
         notif.BorderSizePixel = 0
         notif.LayoutOrder = -window.activeNotifs
@@ -765,8 +717,8 @@ function Library:CreateWindow(title)
 
         local notifGradient = Instance.new("UIGradient")
         notifGradient.Color = ColorSequence.new{
-            ColorSequenceKeypoint.new(0, Color3.fromRGB(30, 30, 40)),
-            ColorSequenceKeypoint.new(1, Color3.fromRGB(15, 15, 25))
+            ColorSequenceKeypoint.new(0, Color3.fromRGB(40, 40, 50)),
+            ColorSequenceKeypoint.new(1, Color3.fromRGB(20, 20, 30))
         }
         notifGradient.Rotation = 90
         notifGradient.Parent = notif
@@ -825,11 +777,11 @@ function Library:CreateWindow(title)
                         data.enabled = not data.enabled
                         if data.enabled then
                             data.button.Text = (data.icon or "🔘") .. " " .. data.name .. " (On)"
-                            data.button.BackgroundColor3 = Color3.fromRGB(0, 255, 150)
+                            data.button.BackgroundColor3 = Color3.fromRGB(0, 200, 100)
                             data.onChange(true)
                         else
                             data.button.Text = (data.icon or "🔘") .. " " .. data.name .. " (Off)"
-                            data.button.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+                            data.button.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
                             data.onChange(false)
                         end
                     end
