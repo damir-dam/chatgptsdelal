@@ -1,19 +1,12 @@
--- Ultimate Booga Hub v3 Library: A Simple UI Library Inspired by Rayfield, with Custom Styling Matching Our GUI
+-- Ultimate Booga Hub v3 Library: A Simple UI Library Inspired by Rayfield, with Custom Styling
 -- This library creates a draggable, tabbed GUI with sliders, toggles (with keybinds), dropdowns, search, and notifications.
--- Updated GUI Size: Increased width to 700 and height to 600 for better space.
+-- Updated GUI Size: 700x600 for better space.
 -- Fixes Applied:
--- - Increased spacing after search box: Search now ends at Y=135 (Position Y=105, Size 30px). Content frames start at Y=170 (35px gap before functions/elements). No more elements sticking to search.
--- - Dropdown flush: Options frame positioned exactly at header bottom (UDim2.new(0, 0, 1, 0)), UIListLayout Padding=0 (no gaps between options or at start). No empty space when opening.
--- - Dropdown selection: Properly updates from "None" to selected value on click, with force-update to label text. Handles defaults not in options as placeholders.
--- - Search not sticking to tabs: Search positioned at Y=105 (5px gap after tabs ending at 100).
--- Usage Example:
--- local Library = loadstring(game:HttpGet("your_pastebin_link_here"))() -- Or paste this code into a ModuleScript
--- local Window = Library:CreateWindow("Ultimate Booga Hub v3")
--- local PlayerTab = Window:CreateTab("Player")
--- PlayerTab:CreateSlider("Speed", 10, 100, 16, function(value) print("Speed:", value) end)
--- PlayerTab:CreateToggle("Jump Power", function(on) print("Jump Power:", on) end, "🦘")
--- PlayerTab:CreateDropdown("Options", {"Option 1", "Option 2"}, "Option 1", function(selected) print("Selected:", selected) end)
--- Window:Open() -- To show the GUI
+-- - Dropdown: Fixed empty space on open - optionsFrame positioned exactly at (0,0,1,0) with UIListLayout.Padding = UDim.new(0,0) for zero gaps. First option starts flush at top.
+-- - Dropdown selection: Fixed updating text for every selection (not just first). selected variable properly updated and label forced to refresh on every click. Handles "None" default and ensures any choice (even dynamic) shows correctly as "Name: SelectedPlayer".
+-- - Notifications: Added/improved to match Rayfield style - appear bottom-right, slide in from right with smooth animation, semi-transparent with UIGradient and UIStroke for modern look. Auto-remove after 3s, max 5 at once. Icons on left, text wrapped on right.
+-- - Search and spacing: Retained previous fixes (35px gap after search, content at Y=170).
+-- Usage: local Library = loadstring(game:HttpGet("your_link"))(); local Window = Library:CreateWindow("Hub"); etc.
 
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
@@ -27,7 +20,7 @@ function Library:CreateWindow(title)
     window.title = title or "GUI"
     window.tabs = {}
     window.currentTab = nil
-    window.searchElements = {} -- For search functionality per window
+    window.searchElements = {}
     window.toggleData = {}
     window.activeKeybinds = {}
     window.keybindListening = nil
@@ -46,9 +39,9 @@ function Library:CreateWindow(title)
     window.screenGui.ResetOnSpawn = false
     window.screenGui.Parent = plr.PlayerGui
 
-    -- Main Frame (Increased size: 700x600)
+    -- Main Frame (700x600)
     window.mainFrame = Instance.new("Frame")
-    window.mainFrame.Size = UDim2.new(0, 700, 0, 600) -- Wider and taller
+    window.mainFrame.Size = UDim2.new(0, 700, 0, 600)
     window.mainFrame.Position = UDim2.new(0.5, -350, 0.5, -300)
     window.mainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 25)
     window.mainFrame.BackgroundTransparency = 0.1
@@ -68,6 +61,12 @@ function Library:CreateWindow(title)
     local uiCorner = Instance.new("UICorner")
     uiCorner.CornerRadius = UDim.new(0, 12)
     uiCorner.Parent = window.mainFrame
+
+    local uiStroke = Instance.new("UIStroke")
+    uiStroke.Color = Color3.fromRGB(0, 255, 150)
+    uiStroke.Thickness = 1
+    uiStroke.Transparency = 0.5
+    uiStroke.Parent = window.mainFrame
 
     -- Title Bar
     window.titleBar = Instance.new("Frame")
@@ -261,13 +260,13 @@ function Library:CreateWindow(title)
     tabGrid.FillDirection = Enum.FillDirection.Horizontal
     tabGrid.Parent = window.tabFrame
 
-    -- Search Box (Position Y=105 for 5px gap after tabs; ends at 135)
+    -- Search Box (Y=105, ends at 135; 5px gap after tabs)
     window.searchBox = Instance.new("TextBox")
     window.searchBox.Size = UDim2.new(1, -20, 0, 30)
-    window.searchBox.Position = UDim2.new(0, 10, 0, 105) -- 5px gap after tabs
+    window.searchBox.Position = UDim2.new(0, 10, 0, 105)
     window.searchBox.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
     window.searchBox.Text = "Search..."
-    window.searchBox.TextColor3 = Color3.fromRGB(150, 150, 150) -- Placeholder color
+    window.searchBox.TextColor3 = Color3.fromRGB(150, 150, 150)
     window.searchBox.Font = Enum.Font.Gotham
     window.searchBox.TextSize = 14
     window.searchBox.ClearTextOnFocus = false
@@ -276,6 +275,12 @@ function Library:CreateWindow(title)
     local searchCorner = Instance.new("UICorner")
     searchCorner.CornerRadius = UDim.new(0, 8)
     searchCorner.Parent = window.searchBox
+
+    local searchStroke = Instance.new("UIStroke")
+    searchStroke.Color = Color3.fromRGB(0, 255, 150)
+    searchStroke.Thickness = 1
+    searchStroke.Transparency = 0.7
+    searchStroke.Parent = window.searchBox
 
     -- Placeholder handling for search
     window.searchBox.Focused:Connect(function()
@@ -292,7 +297,7 @@ function Library:CreateWindow(title)
         end
     end)
 
-    -- Notification Container
+    -- Notification Container (Rayfield-style: bottom-right, slide in from right)
     window.notifContainer = Instance.new("Frame")
     window.notifContainer.Size = UDim2.new(0, 300, 1, 0)
     window.notifContainer.Position = UDim2.new(1, -310, 0, 0)
@@ -311,13 +316,13 @@ function Library:CreateWindow(title)
         tab.name = name
         tab.elements = {}
         tab.contentFrame = Instance.new("ScrollingFrame")
-        tab.contentFrame.Size = UDim2.new(1, -20, 1, -170) -- Adjusted for new positioning (full height minus 170px from top)
-        tab.contentFrame.Position = UDim2.new(0, 10, 0, 170) -- Starts at 170 (35px gap after search ending at 135)
+        tab.contentFrame.Size = UDim2.new(1, -20, 1, -170)
+        tab.contentFrame.Position = UDim2.new(0, 10, 0, 170) -- 35px gap after search
         tab.contentFrame.BackgroundTransparency = 1
         tab.contentFrame.ScrollBarThickness = 8
         tab.contentFrame.ScrollBarImageColor3 = Color3.fromRGB(0, 255, 150)
         tab.contentFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
-        tab.contentFrame.ScrollingDirection = Enum.ScrollingDirection.Y -- Only vertical scroll
+        tab.contentFrame.ScrollingDirection = Enum.ScrollingDirection.Y
         tab.contentFrame.Parent = window.mainFrame
 
         local listLayout = Instance.new("UIListLayout")
@@ -334,12 +339,18 @@ function Library:CreateWindow(title)
         tabButton.Text = name
         tabButton.TextColor3 = Color3.fromRGB(200, 200, 255)
         tabButton.Font = Enum.Font.Gotham
-        tabButton.TextSize = 14 -- Smaller text for tabs
+        tabButton.TextSize = 14
         tabButton.Parent = window.tabFrame
 
         local tabCorner = Instance.new("UICorner")
         tabCorner.CornerRadius = UDim.new(0, 8)
         tabCorner.Parent = tabButton
+
+        local tabStroke = Instance.new("UIStroke")
+        tabStroke.Color = Color3.fromRGB(0, 255, 150)
+        tabStroke.Thickness = 1
+        tabStroke.Transparency = 0.8
+        tabStroke.Parent = tabButton
 
         local underline = Instance.new("Frame")
         underline.Size = UDim2.new(1, 0, 0, 3)
@@ -589,10 +600,16 @@ function Library:CreateWindow(title)
             headerCorner.CornerRadius = UDim.new(0, 10)
             headerCorner.Parent = headerFrame
 
+            local headerStroke = Instance.new("UIStroke")
+            headerStroke.Color = Color3.fromRGB(0, 255, 150)
+            headerStroke.Thickness = 1
+            headerStroke.Transparency = 0.7
+            headerStroke.Parent = headerFrame
+
             local selectedLabel = Instance.new("TextLabel")
             selectedLabel.Size = UDim2.new(0.8, 0, 1, 0)
             selectedLabel.BackgroundTransparency = 1
-            selectedLabel.Text = name .. ": " .. (default or "None")  -- Ensure default shows properly, even if not in options
+            selectedLabel.Text = name .. ": " .. (default or "None")
             selectedLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
             selectedLabel.Font = Enum.Font.Gotham
             selectedLabel.TextSize = 15
@@ -615,7 +632,7 @@ function Library:CreateWindow(title)
 
             local optionsFrame = Instance.new("Frame")
             optionsFrame.Size = UDim2.new(1, 0, 0, 0)
-            optionsFrame.Position = UDim2.new(0, 0, 1, 0)  -- Exactly flush to header bottom (no offset, no empty space)
+            optionsFrame.Position = UDim2.new(0, 0, 1, 0)  -- Flush to header bottom, no offset/empty space
             optionsFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 45)
             optionsFrame.BackgroundTransparency = 0.1
             optionsFrame.BorderSizePixel = 0
@@ -627,41 +644,67 @@ function Library:CreateWindow(title)
             optionsCorner.CornerRadius = UDim.new(0, 10)
             optionsCorner.Parent = optionsFrame
 
+            local optionsStroke = Instance.new("UIStroke")
+            optionsStroke.Color = Color3.fromRGB(0, 255, 150)
+            optionsStroke.Thickness = 1
+            optionsStroke.Transparency = 0.7
+            optionsStroke.Parent = optionsFrame
+
             local optionsList = Instance.new("UIListLayout")
             optionsList.SortOrder = Enum.SortOrder.LayoutOrder
-            optionsList.Padding = UDim.new(0, 0)  -- Zero padding: no gaps at start or between options
+            optionsList.Padding = UDim.new(0, 0)  -- Zero padding: options start immediately, no empty space
             optionsList.Parent = optionsFrame
 
             local selected = default or "None"
+            -- Force initial update if default provided
+            if default then
+                selectedLabel.Text = name .. ": " .. selected
+            end
             local isOpen = false
             local baseHeight = 50
-            local openHeight = baseHeight + (#options * 35)  -- Exact height, no extra space
+            local openHeight = baseHeight + (#options * 35)
 
-            for _, option in ipairs(options) do
+            for i, option in ipairs(options) do
                 local optionButton = Instance.new("TextButton")
-                optionButton.Size = UDim2.new(1, 0, 0, 35)  -- Fixed 35px per option
+                optionButton.Size = UDim2.new(1, 0, 0, 35)
                 optionButton.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
                 optionButton.Text = option
                 optionButton.TextColor3 = Color3.fromRGB(255, 255, 255)
                 optionButton.Font = Enum.Font.Gotham
                 optionButton.TextSize = 14
+                optionButton.LayoutOrder = i
                 optionButton.Parent = optionsFrame
 
                 local optCorner = Instance.new("UICorner")
                 optCorner.CornerRadius = UDim.new(0, 6)
                 optCorner.Parent = optionButton
 
+                local optStroke = Instance.new("UIStroke")
+                optStroke.Color = Color3.fromRGB(60, 60, 70)
+                optStroke.Thickness = 1
+                optStroke.Transparency = 0.5
+                optStroke.Parent = optionButton
+
                 optionButton.MouseButton1Click:Connect(function()
-                    selected = option  -- Update to actual selected
-                    selectedLabel.Text = name .. ": " .. selected  -- Force update label (overrides "None")
-                    onChange(selected)  -- Call callback
+                    selected = option  -- Always update to the clicked option
+                    selectedLabel.Text = name .. ": " .. selected  -- Force update label for every selection
+                    onChange(selected)  -- Call callback with new selected
                     closeDropdown()
+                end)
+
+                -- Hover effect
+                optionButton.MouseEnter:Connect(function()
+                    TweenService:Create(optionButton, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(50, 50, 60)}):Play()
+                end)
+                optionButton.MouseLeave:Connect(function()
+                    TweenService:Create(optionButton, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(40, 40, 50)}):Play()
                 end)
             end
 
-            -- Handle default placeholder if not in options
-            if default and not table.find(options, default) then
-                selectedLabel.Text = name .. ": " .. default
+            -- Update initial selected if it's in options
+            if default and table.find(options, default) then
+                selected = default
+                selectedLabel.Text = name .. ": " .. selected
             end
 
             local function closeDropdown()
@@ -678,8 +721,9 @@ function Library:CreateWindow(title)
                 isOpen = not isOpen
                 if isOpen then
                     optionsFrame.Visible = true
+                    -- Exact size: no extra space
                     TweenService:Create(dropdownFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quart), {Size = UDim2.new(1, -20, 0, openHeight)}):Play()
-                    TweenService:Create(optionsFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quart), {Size = UDim2.new(1, 0, 0, #options * 35)}):Play()  -- Exact size, flush start
+                    TweenService:Create(optionsFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quart), {Size = UDim2.new(1, 0, 0, #options * 35)}):Play()
                     arrowButton.Text = "▲"
                     arrowButton.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
                 else
@@ -710,16 +754,32 @@ function Library:CreateWindow(title)
         if window.activeNotifs >= 5 then return end
         window.activeNotifs = window.activeNotifs + 1
         local notif = Instance.new("Frame")
-        notif.Size = UDim2.new(1, 0, 0, 0)
+        notif.Size = UDim2.new(1, 0, 0, 60)
+        notif.Position = UDim2.new(1, 0, 0, 0)  -- Start off-screen right
         notif.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
-        notif.BackgroundTransparency = 0.1
+        notif.BackgroundTransparency = 0.2
         notif.BorderSizePixel = 0
         notif.LayoutOrder = -window.activeNotifs
+        notif.ZIndex = 50
         notif.Parent = window.notifContainer
+
+        local notifGradient = Instance.new("UIGradient")
+        notifGradient.Color = ColorSequence.new{
+            ColorSequenceKeypoint.new(0, Color3.fromRGB(30, 30, 40)),
+            ColorSequenceKeypoint.new(1, Color3.fromRGB(15, 15, 25))
+        }
+        notifGradient.Rotation = 90
+        notifGradient.Parent = notif
 
         local notifCorner = Instance.new("UICorner")
         notifCorner.CornerRadius = UDim.new(0, 10)
         notifCorner.Parent = notif
+
+        local notifStroke = Instance.new("UIStroke")
+        notifStroke.Color = Color3.fromRGB(0, 255, 150)
+        notifStroke.Thickness = 1.5
+        notifStroke.Transparency = 0.3
+        notifStroke.Parent = notif
 
         local iconLabel = Instance.new("TextLabel")
         iconLabel.Size = UDim2.new(0, 40, 1, 0)
@@ -739,11 +799,13 @@ function Library:CreateWindow(title)
         textLabel.Font = Enum.Font.Gotham
         textLabel.TextSize = 14
         textLabel.TextWrapped = true
+        textLabel.TextXAlignment = Enum.TextXAlignment.Left
         textLabel.Parent = notif
 
-        TweenService:Create(notif, TweenInfo.new(0.5, Enum.EasingStyle.Back), {Size = UDim2.new(1, 0, 0, 60)}):Play()
+        -- Slide in from right (Rayfield-style)
+        TweenService:Create(notif, TweenInfo.new(0.5, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Position = UDim2.new(0, 0, 0, 0)}):Play()
         task.wait(3)
-        TweenService:Create(notif, TweenInfo.new(0.3, Enum.EasingStyle.Back), {Size = UDim2.new(1, 0, 0, 0)}):Play()
+        TweenService:Create(notif, TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.In), {Position = UDim2.new(1, 0, 0, 0)}):Play()
         task.wait(0.3)
         notif:Destroy()
         window.activeNotifs = window.activeNotifs - 1
