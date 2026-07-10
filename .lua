@@ -2109,6 +2109,7 @@ function Library._CreateDropdown(tab, config)
     local flag = config.Flag
     local selected = multiSelect and {} or default
     local expanded = false
+    local originalHeight = s.Dropdown.Height   -- добавить после expanded
 
     -- Цвета для выбранных элементов
     local SELECTED_TEXT_COLOR = Color3.fromRGB(139, 0, 0)  -- Темно-красный текст
@@ -2307,56 +2308,66 @@ function Library._CreateDropdown(tab, config)
 
     -- Функция для открытия dropdown'а
     local function OpenDropdown()
-        if expanded then return end
+    if expanded then return end
 
-        -- Закрываем все другие открытые dropdown'ы
-        for dropdownFrame, closeFunc in pairs(Library._OpenDropdowns) do
-            if dropdownFrame ~= frame and closeFunc and type(closeFunc) == "function" then
-                closeFunc()
-            end
+    -- Закрываем все другие открытые dropdown'ы
+    for dropdownFrame, closeFunc in pairs(Library._OpenDropdowns) do
+        if dropdownFrame ~= frame and closeFunc and type(closeFunc) == "function" then
+            closeFunc()
         end
-
-        expanded = true
-        frame.ZIndex = 10
-
-        -- Показываем элементы
-        optionsContainer.Visible = true
-        searchBox.Visible = true
-
-        -- Обновляем цвета кнопок
-        UpdateOptionButtonsColors()
-
-        -- Анимация открытия
-        CreateTween(arrow, {Rotation = 180}, animationspeed.Normal)
-        CreateTween(optionsContainer, {Position = UDim2.new(1, -145, 0, 60), Size = UDim2.new(0, 135, 0, totalOptionsHeight)}, animationspeed.Normal)
-
-        -- Добавляем в таблицу открытых dropdown'ов
-        Library._OpenDropdowns[frame] = CloseDropdown
     end
+
+    expanded = true
+    frame.ZIndex = 10
+
+    -- Сохраняем текущую высоту перед изменением
+    originalHeight = frame.Size.Y.Offset
+
+    -- Увеличиваем высоту фрейма, чтобы вместить optionsContainer
+    local newHeight = originalHeight + totalOptionsHeight + 10  -- 10px отступ снизу
+    frame.Size = UDim2.new(1, 0, 0, newHeight)
+
+    -- Показываем элементы
+    optionsContainer.Visible = true
+    searchBox.Visible = true
+
+    -- Обновляем цвета кнопок
+    UpdateOptionButtonsColors()
+
+    -- Анимация открытия
+    CreateTween(arrow, {Rotation = 180}, animationspeed.Normal)
+    CreateTween(optionsContainer, {Position = UDim2.new(1, -145, 0, 60), Size = UDim2.new(0, 135, 0, totalOptionsHeight)}, animationspeed.Normal)
+
+    -- Добавляем в таблицу открытых dropdown'ов
+    Library._OpenDropdowns[frame] = CloseDropdown
+end
 
     -- Функция для закрытия dropdown'а
     local function CloseDropdown()
-        if not expanded then return end
+    if not expanded then return end
 
-        expanded = false
-        frame.ZIndex = 1
+    expanded = false
+    frame.ZIndex = 1
 
-        -- Анимация закрытия
-        CreateTween(arrow, {Rotation = 0}, animationspeed.Normal)
-        CreateTween(optionsContainer, {Size = UDim2.new(0, 135, 0, 0)}, animationspeed.Normal)
+    -- Возвращаем исходную высоту фрейма
+    frame.Size = UDim2.new(1, 0, 0, originalHeight)
 
-        -- Ждем окончания анимации и скрываем элементы
-        wait(animationspeed.Normal)
-        if not expanded then
-            optionsContainer.Visible = false
-            searchBox.Visible = false
-            searchBox.Text = ""
-            FilterOptions("")
-        end
+    -- Анимация закрытия
+    CreateTween(arrow, {Rotation = 0}, animationspeed.Normal)
+    CreateTween(optionsContainer, {Size = UDim2.new(0, 135, 0, 0)}, animationspeed.Normal)
 
-        -- Удаляем из таблицы открытых dropdown'ов
-        Library._OpenDropdowns[frame] = nil
+    -- Ждём окончания анимации и скрываем элементы
+    task.wait(animationspeed.Normal)
+    if not expanded then
+        optionsContainer.Visible = false
+        searchBox.Visible = false
+        searchBox.Text = ""
+        FilterOptions("")
     end
+
+    -- Удаляем из таблицы открытых dropdown'ов
+    Library._OpenDropdowns[frame] = nil
+end
 
     -- Функция для создания кнопок опций
     local function CreateOptionButton(option)
