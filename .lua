@@ -15460,12 +15460,26 @@ function startHarvest()
     end)
 end
 end -- AsterEatFuelPlantHarvest
+
 do -- AsterSandFarm
--- Sand farm: stack Sand Amount mounds at one spot (shovel) -> god pick break all -> repeat
 local sandActive = false
 local sandSpot = nil
 local sandPhase = "dig" -- "dig" | "break"
-local sandBreakAttempts = 0
+
+-- Порядок приоритета кирок (первая найденная — используется)
+local PICK_PRIORITY = {
+    "God Pick",
+    "Emerald Pick",
+    "Pink Diamond Pick",
+    "Void Pick",
+    "Magnetite Pick",
+    "Adurite Pick",
+    "Iron Pick",
+    "Crystal Pick",
+    "Steel Pick",
+    "Pickaxe",
+    "Pick",
+}
 
 local function getSandAmount()
     local amount = tonumber(Settings.SandAmount)
@@ -15476,8 +15490,44 @@ local function getSandAmount()
     end
     amount = math.floor(amount or 1)
     if amount < 1 then return 1 end
-    if amount > 40 then return 40 end
+    if amount > 500 then return 500 end
     return amount
+end
+
+local function getCurrentSandCount()
+    local a = tonumber(getInventoryCount("Sand")) or 0
+    local b = tonumber(getInventoryCount("Sand Stack")) or 0
+    return a + b
+end
+
+local function getBestPickInInventory()
+    for _, pickName in ipairs(PICK_PRIORITY) do
+        local has = false
+        pcall(function()
+            if getToolSlot and getToolSlot(pickName) then has = true end
+            if not has and getlayout and getlayout(pickName) then has = true end
+            if not has and plr.Backpack and plr.Backpack:FindFirstChild(pickName) then has = true end
+            if not has and plr.Character and plr.Character:FindFirstChild(pickName) then has = true end
+        end)
+        if has then return pickName end
+    end
+    return nil
+end
+
+local function isHoldingPick()
+    local char = plr.Character
+    if not char then return false end
+    local equipped = char:FindFirstChildOfClass("Tool")
+    if not equipped then return false end
+    return string.find(string.lower(equipped.Name), "pick", 1, true) ~= nil
+end
+
+local function ensureAnyPick()
+    if isHoldingPick() then return end
+    local pickName = getBestPickInInventory()
+    if pickName then
+        equipItemPacket(pickName)
+    end
 end
 
 local function lockSandSpot()
@@ -15487,12 +15537,27 @@ local function lockSandSpot()
     end
     local root = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
     if not root then return nil end
-    -- Lock one dig point (X/Z/Y) for the whole cycle ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â Y does not follow you up the stack.
-    sandSpot = {
-        x = math.floor(root.Position.X + 0.5),
-        z = math.floor(root.Position.Z + 0.5),
-        y = root.Position.Y - (Settings.SandHeight or 1),
-    }
+
+    local x = math.floor(root.Position.X + 0.5)
+    local z = math.floor(root.Position.Z + 0.5)
+
+    local terrainParams = RaycastParams.new()
+    terrainParams.FilterType = Enum.RaycastFilterType.Include
+    terrainParams.FilterDescendantsInstances = { workspace.Terrain }
+    terrainParams.IgnoreWater = true
+
+    local rayOrigin = Vector3.new(x, root.Position.Y + 200, z)
+    local rayDir = Vector3.new(0, -1000, 0)
+    local hit = workspace:Raycast(rayOrigin, rayDir, terrainParams)
+
+    local y
+    if hit then
+        y = hit.Position.Y
+    else
+        y = root.Position.Y - (Settings.SandHeight or 1)
+    end
+
+    sandSpot = { x = x, z = z, y = y }
     Settings.SandFarmSpot = sandSpot
     return sandSpot
 end
@@ -15504,56 +15569,12 @@ end
 
 local function alignToSandFarmSpot(hrp, spot)
     if not hrp or not spot then return false end
-    if updateRayParams then updateRayParams() end
-    local hit = workspace:Raycast(Vector3.new(spot.x, hrp.Position.Y + 20, spot.z), Vector3.new(0, -80, 0), rayParams)
-    local groundY = hit and hit.Position.Y or spot.y
-    local standPos = Vector3.new(spot.x, groundY + 3, spot.z)
     local distXZ = (Vector3.new(hrp.Position.X, 0, hrp.Position.Z) - Vector3.new(spot.x, 0, spot.z)).Magnitude
-    if distXZ < 1.5 and math.abs(hrp.Position.Y - standPos.Y) < 4 then
-        return false
-    end
-    local lookAt = Vector3.new(spot.x, groundY + 1.5, spot.z)
-    hrp.CFrame = CFrame.lookAt(standPos, lookAt)
-    hrp.AssemblyLinearVelocity = Vector3.zero
-    hrp.AssemblyAngularVelocity = Vector3.zero
+    if distXZ < 3 then return false end
     local hum = plr.Character and plr.Character:FindFirstChild("Humanoid")
-    if hum then hum:MoveTo(standPos) end
-    return true
-end
-
-local function nudgeOffSandStack(hrp, spot)
-    if not hrp or not spot or not playerOnSandFarmSpot(hrp, spot) then return false end
-    -- Only step aside when actually standing on the stacked mounds, not when beside the tile.
-    if hrp.Position.Y <= spot.y + 2 then return false end
-    if updateRayParams then updateRayParams() end
-
-    local lookAt = Vector3.new(spot.x, spot.y + 1.5, spot.z)
-    local offsets = {
-        Vector3.new(5, 0, 0),
-        Vector3.new(-5, 0, 0),
-        Vector3.new(0, 0, 5),
-        Vector3.new(0, 0, -5),
-    }
-    local bestPos = nil
-    local bestDist = 0
-    for _, off in ipairs(offsets) do
-        local tx, tz = spot.x + off.X, spot.z + off.Z
-        local hit = workspace:Raycast(Vector3.new(tx, hrp.Position.Y + 20, tz), Vector3.new(0, -80, 0), rayParams)
-        local groundY = hit and hit.Position.Y or spot.y
-        local standPos = Vector3.new(tx, groundY + 3, tz)
-        local dist = (Vector3.new(tx, 0, tz) - Vector3.new(spot.x, 0, spot.z)).Magnitude
-        if dist > bestDist then
-            bestDist = dist
-            bestPos = standPos
-        end
+    if hum then
+        pcall(function() hum:MoveTo(Vector3.new(spot.x, hrp.Position.Y, spot.z)) end)
     end
-    if not bestPos then return false end
-
-    hrp.CFrame = CFrame.lookAt(bestPos, lookAt)
-    hrp.AssemblyLinearVelocity = Vector3.zero
-    hrp.AssemblyAngularVelocity = Vector3.zero
-    local hum = plr.Character and plr.Character:FindFirstChild("Humanoid")
-    if hum then hum:MoveTo(bestPos) end
     return true
 end
 
@@ -15656,7 +15677,9 @@ local function collectSandFarmBreakTargets()
 end
 
 local function ensureShovel()
-    local tools = workspace.Players[plr.Name]:FindFirstChild("Tools")
+    local playersFolder = workspace:FindFirstChild("Players")
+    local plrFolder = playersFolder and playersFolder:FindFirstChild(plr.Name)
+    local tools = plrFolder and plrFolder:FindFirstChild("Tools")
     if tools and not tools:FindFirstChild("Shovel") and getToolSlot("Shovel") then
         equipItemPacket("Shovel")
     end
@@ -15665,30 +15688,20 @@ end
 local function ensureShovelOnly()
     local char = plr.Character
     if not char then return end
-    if char:FindFirstChild("God Pick") then
-        local hum = char:FindFirstChild("Humanoid")
-        if hum then hum:UnequipTools() end
+    -- Снимаем кирку, если она надета
+    local equipped = char:FindFirstChildOfClass("Tool")
+    if equipped then
+        local lname = string.lower(equipped.Name)
+        if string.find(lname, "pick", 1, true) then
+            local hum = char:FindFirstChild("Humanoid")
+            if hum then hum:UnequipTools() end
+        end
     end
     ensureShovel()
     local bp = plr.Backpack:FindFirstChild("Shovel")
     local hum = char:FindFirstChild("Humanoid")
     if bp and hum and not char:FindFirstChild("Shovel") then
         hum:EquipTool(bp)
-    end
-end
-
-local function ensureGodPick()
-    local char = plr.Character
-    if not char then return end
-    local pickName = "God Pick"
-    if not char:FindFirstChild(pickName) and getToolSlot(pickName) then
-        equipItemPacket(pickName)
-        task.wait(0.02)
-    end
-    if not char:FindFirstChild(pickName) then
-        local bp = plr.Backpack:FindFirstChild(pickName)
-        local hum = char:FindFirstChild("Humanoid")
-        if bp and hum then hum:EquipTool(bp) end
     end
 end
 
@@ -15723,6 +15736,17 @@ local function fireSandDig(spot, entityId)
     end
 end
 
+-- ============================================================
+-- MAIN SAND FARM
+-- ============================================================
+-- SandAmount = ЦЕЛЕВОЕ количество песка в инвентаре.
+-- Скрипт: копает лопатой -> бьёт кучу киркой -> повторяет,
+-- пока суммарный песок в инвентаре не достигнет SandAmount.
+-- ============================================================
+
+local MOUNDS_PER_CYCLE_MAX = 10  -- максимум кучек стакаем за один заход
+local sandBreakAttempts = 0
+
 function startAutoSand()
     if sandActive then return end
     sandActive = true
@@ -15731,92 +15755,95 @@ function startAutoSand()
     sandBreakAttempts = 0
     Settings.SandFarmSpot = nil
     Settings.SandFarmDigCount = 0
-    Settings.SandFarmAllowBreak = false
     Settings.SandFarmPhase = "dig"
 
+    local function disableSelf()
+        Settings.AutoSandEnabled = false
+        local reg = Window and Window.ElementRegistry
+            and Window.ElementRegistry["Auto Sand Farm (Turn on resource aura)"]
+        if reg and reg.SetValue then
+            pcall(function() reg.SetValue(false) end)
+        end
+    end
+
     task.spawn(function()
+        -- Сколько песка было на момент включения тоггла
+        local startSand = getCurrentSandCount()
+
         while Settings.AutoSandEnabled do
             pcall(function()
                 local spot = lockSandSpot()
                 if not spot then return end
 
-                local level1 = sandMoundAtSpot("_MOUND")
-                local delay = math.max(tonumber(Settings.SandFarmSpeed) or 0.4, 0.2)
-                local sandAmount = getSandAmount()
-                Settings.SandAmount = sandAmount
+                local targetAmount = getSandAmount()
+                Settings.SandAmount = targetAmount
+                local currentSand = getCurrentSandCount()
+
+                -- Сколько НОВОГО песка добыто за эту сессию
+                local gainedThisSession = math.max(0, currentSand - startSand)
+
+                -- ЦЕЛЬ СЕССИИ ДОСТИГНУТА — выключаем
+                if gainedThisSession >= targetAmount then
+                    disableSelf()
+                    return
+                end
+
+                local delay = math.max(tonumber(Settings.SandFarmSpeed) or 0.08, 0.05)
                 local moundCount = countSandMoundsAtSpot()
                 Settings.SandFarmDigCount = moundCount
 
                 if sandPhase == "dig" then
-                    Settings.SandFarmAllowBreak = false
-                    Settings.SandFarmPhase = "dig"
+                    -- === ФАЗА КОПАНИЯ ЛОПАТОЙ ===
                     ensureShovelOnly()
                     local hrp = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
-                    if hrp and alignToSandFarmSpot(hrp, spot) then
-                        task.wait(0.08)
+                    if hrp then
+                        alignToSandFarmSpot(hrp, spot)
                     end
 
-                    if moundCount >= sandAmount then
-                        task.wait(math.max(delay, 0.35))
+                    -- Сколько кучек стакать в этом заходе (не больше остатка до цели)
+                    local remaining = math.max(1, targetAmount - gainedThisSession)
+                    local moundsThisCycle = math.min(MOUNDS_PER_CYCLE_MAX, remaining)
+
+                    if moundCount >= moundsThisCycle then
                         sandPhase = "break"
                         Settings.SandFarmPhase = "break"
-                        ensureGodPick()
-                        task.wait(math.max(delay * 0.5, 0.2))
+                        sandBreakAttempts = 0
+                        ensureAnyPick()
+                        task.wait(math.max(delay * 0.5, 0.03))
                     else
+                        local level1 = sandMoundAtSpot("_MOUND")
                         local id = level1 and getSandMoundEntityId(level1)
                         fireSandDig(spot, id)
                         task.wait(delay)
                     end
                 else
-                    Settings.SandFarmAllowBreak = true
-                    Settings.SandFarmPhase = "break"
+                    -- === ФАЗА РАЗБИТИЯ КИРКОЙ === (без изменений)
                     local targets = collectSandFarmBreakTargets()
                     if #targets > 0 then
                         sandBreakAttempts = sandBreakAttempts + 1
-                        if sandBreakAttempts > 15 then
+                        if sandBreakAttempts > 150 then
                             sandBreakAttempts = 0
+                            sandSpot = nil
+                            Settings.SandFarmSpot = nil
                             sandPhase = "dig"
                             Settings.SandFarmPhase = "dig"
-                            Settings.SandFarmAllowBreak = false
-                            ensureShovelOnly()
-                            local hrpRetry = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
-                            if hrpRetry and alignToSandFarmSpot(hrpRetry, spot) then
-                                task.wait(0.08)
-                            end
-                            local level1 = sandMoundAtSpot("_MOUND")
-                            fireSandDig(spot, level1 and getSandMoundEntityId(level1))
-                            task.wait(delay)
-                        else
-                        ensureGodPick()
+                            return
+                        end
+
+                        ensureAnyPick()
                         local hrp = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
                         if hrp then
-                            if nudgeOffSandStack(hrp, spot) then
-                                task.wait(0.08)
-                            end
-
                             local pileCenter = sandPileCenter(spot)
                             local swings = {}
                             for i = 1, #targets do
-                                if targets[i].name == "Sand Mound" then
-                                    table.insert(swings, {
-                                        eid = targets[i].eid,
-                                        pos = targets[i].pos or pileCenter,
-                                    })
-                                end
-                            end
-                            if #swings == 0 then
-                                for i = 1, #targets do
-                                    table.insert(swings, {
-                                        eid = targets[i].eid,
-                                        pos = targets[i].pos or pileCenter,
-                                    })
-                                end
+                                table.insert(swings, {
+                                    eid = targets[i].eid,
+                                    pos = targets[i].pos or pileCenter,
+                                })
                             end
                             local maxPick = math.clamp(#swings, 1, 9)
                             local packed = {}
-                            for i = 1, maxPick do
-                                packed[i] = swings[i]
-                            end
+                            for i = 1, maxPick do packed[i] = swings[i] end
                             local fromPos = hrp.Position + Vector3.new(0, 1.25, 0)
                             local swingOpts = {
                                 maxPerPacket = maxPick,
@@ -15828,35 +15855,42 @@ function startAutoSand()
                             fireByteNetSwingTool(packed, hrp, swingOpts)
                         end
                         task.wait(delay)
-                        end
                     else
+                        -- Куча исчезла — снова копаем
                         sandBreakAttempts = 0
-                        task.wait(math.max(delay, 0.35))
+                        task.wait(0.15)
+
+                        -- Проверяем, не добили ли цель за эту сессию
+                        local afterSand = getCurrentSandCount()
+                        local gainedAfter = math.max(0, afterSand - startSand)
+                        if gainedAfter >= targetAmount then
+                            disableSelf()
+                            return
+                        end
+
                         sandPhase = "dig"
                         Settings.SandFarmPhase = "dig"
                         Settings.SandFarmDigCount = 0
-                        Settings.SandFarmAllowBreak = false
                         ensureShovelOnly()
                         local hrp = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
-                        if hrp and alignToSandFarmSpot(hrp, spot) then
-                            task.wait(0.08)
+                        if hrp then
+                            alignToSandFarmSpot(hrp, spot)
                         end
                         task.wait(delay)
                     end
                 end
             end)
-            task.wait(math.max(tonumber(Settings.SandFarmSpeed) or 0.4, 0.2))
+            task.wait(0.01)
         end
+
         sandSpot = nil
         sandPhase = "dig"
         Settings.SandFarmSpot = nil
         Settings.SandFarmDigCount = 0
-        Settings.SandFarmAllowBreak = false
         Settings.SandFarmPhase = "dig"
         sandActive = false
     end)
 end
-
 
 end -- AsterSandFarm
 
@@ -28034,12 +28068,13 @@ do
             Settings.AutoSandEnabled = v
             if v then startAutoSand() end
         end)
-        ASTER.Tabs.Automation:AddSlider("Farm Speed", 0.2, 1, 0.4, 0.1, function(v)
-            Settings.SandFarmSpeed = v
-        end)
-        ASTER.Tabs.Automation:AddSlider("Sand Amount", 1, 40, Settings.SandAmount or 1, 1, function(v)
-            Settings.SandAmount = math.floor(tonumber(v) or 1)
-        end)
+        
+        ASTER.Tabs.Automation:AddSlider("Farm Speed", 0.02, 1, 0.08, 0.01, function(v)
+    Settings.SandFarmSpeed = v
+end)
+ASTER.Tabs.Automation:AddSlider("Sand Amount", 1, 500, Settings.SandAmount or 1, 1, function(v)
+    Settings.SandAmount = math.floor(tonumber(v) or 1)
+end)
 
         task.defer(function()
             if Settings.SelectedPotion then
