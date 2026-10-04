@@ -15490,7 +15490,7 @@ local function getSandAmount()
     end
     amount = math.floor(amount or 1)
     if amount < 1 then return 1 end
-    if amount > 500 then return 500 end
+    if amount > 700000 then return 700000 end   -- ← было 500
     return amount
 end
 
@@ -15744,7 +15744,7 @@ end
 -- пока суммарный песок в инвентаре не достигнет SandAmount.
 -- ============================================================
 
-local MOUNDS_PER_CYCLE_MAX = 10  -- максимум кучек стакаем за один заход
+local MOUNDS_PER_CYCLE_MAX = 30  -- максимум кучек стакаем за один заход
 local sandBreakAttempts = 0
 
 function startAutoSand()
@@ -28072,7 +28072,7 @@ do
         ASTER.Tabs.Automation:AddSlider("Farm Speed", 0.02, 1, 0.08, 0.01, function(v)
     Settings.SandFarmSpeed = v
 end)
-ASTER.Tabs.Automation:AddSlider("Sand Amount", 1, 500, Settings.SandAmount or 1, 1, function(v)
+ASTER.Tabs.Automation:AddSlider("Sand Amount", 1, 700000, Settings.SandAmount or 1, 1, function(v)
     Settings.SandAmount = math.floor(tonumber(v) or 1)
 end)
 
