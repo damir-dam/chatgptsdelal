@@ -30965,6 +30965,7 @@ do -- AsterCritterControl
 
     local autoSkipEnabled = true
     local autoReadyEnabled = true
+    local autoEquipGodRock = true   -- по умолчанию ВКЛ
 
     -- ===== MOVEMENT HELPERS =====
     local critterNoclipConn = nil
@@ -31224,7 +31225,7 @@ do -- AsterCritterControl
         end)
     end
 
-    -- Auto Skip Countdown listener
+    -- Auto Skip Countdown (direct ByteNet packet)
     task.spawn(function()
         local mainGui = plr.PlayerGui:WaitForChild("MainGui", 15)
         if not mainGui then return end
@@ -31235,18 +31236,24 @@ do -- AsterCritterControl
         local skipBtn = bossbar:WaitForChild("SkipButton", 5)
         if not skipBtn then return end
 
+        local bn = game:GetService("ReplicatedStorage"):WaitForChild("ByteNetReliable", 5)
+        if not bn then return end
+
         local lastSkip = 0
         while task.wait(0.3) do
             if autoSkipEnabled and skipBtn.Visible and skipBtn.Active then
                 if tick() - lastSkip > 1.5 then
                     lastSkip = tick()
-                    pcall(function() firesignal(skipBtn.Activated) end)
+                    pcall(function()
+                        local b = buffer.fromstring("\000\227\003\000\000\000\000\000\000\000\000")
+                        bn:FireServer(b)
+                    end)
                 end
             end
         end
     end)
 
-    -- Auto Ready Up listener
+    -- Auto Ready Up (direct ByteNet packet)
     task.spawn(function()
         local playerGui = plr:WaitForChild("PlayerGui")
         local hud = playerGui:WaitForChild("HalloweenWaveHUD", 20)
@@ -31258,6 +31265,9 @@ do -- AsterCritterControl
         local readyBtn = bottom:WaitForChild("Ready", 10)
         if not readyBtn then return end
 
+        local bn = game:GetService("ReplicatedStorage"):WaitForChild("ByteNetReliable", 5)
+        if not bn then return end
+
         local lastReady = 0
         while task.wait(0.3) do
             if autoReadyEnabled
@@ -31267,10 +31277,67 @@ do -- AsterCritterControl
                 and results.Visible
                 and tick() - lastReady >= 1.5 then
                 lastReady = tick()
-                pcall(function() firesignal(readyBtn.Activated) end)
+                pcall(function()
+                    local b = buffer.fromstring("\000\227\000\000\000\000\000\000\000\240?")
+                    bn:FireServer(b)
+                end)
             end
         end
     end)
+
+    -- ===== Auto Equip God Rock (независимый цикл) =====
+    -- Проверяет каждые 1.5 сек: если God Rock надет — ничего не делает,
+    -- если НЕ надет — надевает. Не связано с Auto Ready Up.
+    local function isGodRockEquipped()
+        local char = plr.Character
+        if not char then return false end
+        -- 1) Прямой ребёнок персонажа (обычно Tool в руке)
+        if char:FindFirstChild("God Rock") then return true end
+        -- 2) В workspace.Players.<Name>.Tools (кастомная структура Booga)
+        local playersFolder = workspace:FindFirstChild("Players")
+        if playersFolder then
+            local plrFolder = playersFolder:FindFirstChild(plr.Name)
+            local tools = plrFolder and plrFolder:FindFirstChild("Tools")
+            if tools and tools:FindFirstChild("God Rock") then return true end
+        end
+        -- 3) Humanoid currently equipped Tool
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum then
+            local eq = hum:FindFirstChildOfClass("Tool")
+            if eq and eq.Name == "God Rock" then return true end
+        end
+        return false
+    end
+
+    -- ===== Auto Equip God Rock (через прямой пакет \0-\1) =====
+    -- Если God Rock не в руках — шлём твой пакет и надеваем.
+    -- Если уже в руках — молчим. Проверка каждые 1.5 сек.
+    local function fireGodRockPacket()
+        local bn = game:GetService("ReplicatedStorage"):FindFirstChild("ByteNetReliable")
+        if not bn then
+            bn = game:GetService("ReplicatedStorage"):WaitForChild("ByteNetReliable", 5)
+        end
+        if not bn then return false end
+        pcall(function()
+            local args = {
+                buffer.fromstring("\000-\001")
+            }
+            bn:FireServer(unpack(args))
+        end)
+        return true
+    end
+
+    task.spawn(function()
+        while true do
+            task.wait(1.5)
+            if not autoEquipGodRock then continue end
+            pcall(function()
+                if isGodRockEquipped() then return end
+                fireGodRockPacket()
+            end)
+        end
+    end)
+
 
     -- ===== UI =====
     CritterTab:AddLabel("Movement")
@@ -31326,6 +31393,10 @@ do -- AsterCritterControl
 
     CritterTab:AddToggle("Auto Ready Up", true, function(v)
         autoReadyEnabled = v
+    end)
+
+    CritterTab:AddToggle("Auto Equip God Rock", true, function(v)
+        autoEquipGodRock = v
     end)
 end -- AsterCritterControl
 
