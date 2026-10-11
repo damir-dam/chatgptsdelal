@@ -21695,6 +21695,7 @@ ASTER.Tabs.Planting = Window:AddTab({Title = "Farming", Icon = "rbxassetid://107
 ASTER.Tabs.Visuals = Window:AddTab({Title = "ESP / Visuals", Icon = "rbxassetid://122375159588547"})
 ASTER.Tabs.Settings = Window:AddTab({Title = "Settings", Icon = "rbxassetid://10734950309"})
 ASTER.Tabs.Config = Window:AddTab({Title = "Configs", Icon = "rbxassetid://92734085107015"})
+ASTER.Tabs.Critter = Window:AddTab({Title = "Critter Control", Icon = "rbxassetid://10734965572"})
 
 -- Compatibility stubs for older call sites.
 function restoreEventShotPassthrough() end
@@ -30942,6 +30943,391 @@ end)
     end)
 
 end -- AsterSettingsTabUI
+
+-- [[ CRITTER CONTROL TAB ]] --
+do -- AsterCritterControl
+    local CritterTab = ASTER.Tabs.Critter
+    if not CritterTab then return end
+
+    -- ===== STATE =====
+    local critterFlySpeed = 100
+    local critterOrbitRadius = 5
+    local critterSortBySize = true
+    local critterAutoOrbit = false
+    local critterOrbitLockHeight = nil
+    local critterOrbitGeneration = 0
+
+    local halloweenAuraEnabled = false
+    local halloweenAuraRunning = false
+    local halloweenAuraTargetCount = 3
+    local halloweenAuraCooldown = 0.05
+    local halloweenAuraRange = 60
+
+    local autoSkipEnabled = true
+    local autoReadyEnabled = true
+
+    -- ===== MOVEMENT HELPERS =====
+    local critterNoclipConn = nil
+    local critterSavedCollisions = {}
+    local critterAntiGravConn = nil
+    local critterAntiGrav = nil
+
+    local function critterStartNoclip()
+        if critterNoclipConn then return end
+        critterNoclipConn = game:GetService("RunService").Stepped:Connect(function()
+            local char = plr.Character
+            if not char then return end
+            for _, part in ipairs(char:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    if critterSavedCollisions[part] == nil then
+                        critterSavedCollisions[part] = part.CanCollide
+                    end
+                    part.CanCollide = false
+                end
+            end
+        end)
+    end
+
+    local function critterStopNoclip()
+        if critterNoclipConn then
+            critterNoclipConn:Disconnect()
+            critterNoclipConn = nil
+        end
+        for part, original in pairs(critterSavedCollisions) do
+            if part.Parent then
+                part.CanCollide = original
+            end
+        end
+        table.clear(critterSavedCollisions)
+    end
+
+    local function critterStartAntiGrav()
+        if critterAntiGravConn then return end
+        critterAntiGravConn = game:GetService("RunService").Heartbeat:Connect(function()
+            local char = plr.Character
+            local root = char and char:FindFirstChild("HumanoidRootPart")
+            if not root then
+                if critterAntiGrav then critterAntiGrav:Destroy() critterAntiGrav = nil end
+                return
+            end
+            if not critterAntiGrav or critterAntiGrav.Parent ~= root then
+                if critterAntiGrav then critterAntiGrav:Destroy() end
+                critterAntiGrav = Instance.new("BodyForce")
+                critterAntiGrav.Parent = root
+            end
+            critterAntiGrav.Force = Vector3.new(0, workspace.Gravity * root.AssemblyMass, 0)
+        end)
+    end
+
+    local function critterStopAntiGrav()
+        if critterAntiGravConn then
+            critterAntiGravConn:Disconnect()
+            critterAntiGravConn = nil
+        end
+        if critterAntiGrav then
+            critterAntiGrav:Destroy()
+            critterAntiGrav = nil
+        end
+    end
+
+    local function critterStopOrbit()
+        critterAutoOrbit = false
+        critterOrbitGeneration = critterOrbitGeneration + 1
+        critterOrbitLockHeight = nil
+        critterStopNoclip()
+        critterStopAntiGrav()
+        local reg = Window.ElementRegistry["Auto Orbit Critters"]
+        if reg and reg.SetValue and reg.GetValue and reg.GetValue() == true then
+            reg.SetValue(false)
+        end
+    end
+
+    local function getCritterSize(model)
+        if not model then return math.huge end
+        if model:IsA("BasePart") then return model.Size.Magnitude end
+        local ok, size = pcall(function() return model:GetExtentsSize() end)
+        if ok and size then return size.Magnitude end
+        local total = 0
+        for _, p in ipairs(model:GetDescendants()) do
+            if p:IsA("BasePart") then total = total + p.Size.Magnitude end
+        end
+        return total
+    end
+
+    -- Orbit loop: кружит вокруг цели на фиксированной высоте
+    local function critterOrbitLoop()
+        if critterAutoOrbit then return end
+        critterAutoOrbit = true
+        critterOrbitGeneration = critterOrbitGeneration + 1
+        local token = critterOrbitGeneration
+
+        local char = plr.Character
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        critterOrbitLockHeight = root and root.Position.Y or nil
+
+        critterStartNoclip()
+        critterStartAntiGrav()
+
+        local RunService = game:GetService("RunService")
+        local orbitConn = RunService.Heartbeat:Connect(function(dt)
+            if not critterAutoOrbit or critterOrbitGeneration ~= token then return end
+            local folder = getWorkspaceCritters()
+            if not folder then return end
+
+            local c = plr.Character
+            local r = c and c:FindFirstChild("HumanoidRootPart")
+            if not r then return end
+
+            local targets = {}
+            for _, child in ipairs(folder:GetChildren()) do
+                if isWorkspaceCritterInstance(child) and isWorkspaceCritterAlive(child) then
+                    local part = getWorkspaceCritterPart(child)
+                    if part then
+                        table.insert(targets, { model = child, part = part })
+                    end
+                end
+            end
+            if #targets == 0 then return end
+
+            local rootPos = r.Position
+            table.sort(targets, function(a, b)
+                if critterSortBySize then
+                    local sa, sb = getCritterSize(a.model), getCritterSize(b.model)
+                    if sa ~= sb then return sa < sb end
+                end
+                return (a.part.Position - rootPos).Magnitude < (b.part.Position - rootPos).Magnitude
+            end)
+
+            local best = targets[1]
+            if not best then return end
+
+            local target = best.part.Position
+            local pos = r.Position
+            local y = critterOrbitLockHeight or pos.Y
+
+            local dx = pos.X - target.X
+            local dz = pos.Z - target.Z
+            local angle = math.atan2(dz, dx)
+            local omega = critterFlySpeed / math.max(critterOrbitRadius, 0.5)
+            local newAngle = angle + omega * dt
+
+            local desired = Vector3.new(
+                target.X + math.cos(newAngle) * critterOrbitRadius,
+                y,
+                target.Z + math.sin(newAngle) * critterOrbitRadius
+            )
+
+            local toDesired = desired - pos
+            local dist = toDesired.Magnitude
+            if dist > 0.0001 then
+                local move = math.min(critterFlySpeed * dt, dist)
+                local newPos = pos + toDesired.Unit * move
+                r.CFrame = CFrame.new(newPos) * (r.CFrame - r.CFrame.Position)
+            end
+            r.AssemblyLinearVelocity = Vector3.zero
+        end)
+
+        task.spawn(function()
+            while critterAutoOrbit and critterOrbitGeneration == token do
+                RunService.Heartbeat:Wait()
+            end
+            if orbitConn then orbitConn:Disconnect() end
+            critterStopNoclip()
+            critterStopAntiGrav()
+        end)
+    end
+
+    -- Entity ID resolver (any numeric ID on the model)
+    local function critterGetEntityId(inst)
+        if not inst then return nil end
+        local keys = { "EntityID", "NetworkId", "networkId", "NetworkID", "ID", "Id", "Eid", "EntityId" }
+        for _, key in ipairs(keys) do
+            local v = inst:GetAttribute(key)
+            if v ~= nil then
+                local n = math.floor(tonumber(v) or 0)
+                if n > 0 then return n end
+            end
+        end
+        for _, childName in ipairs(keys) do
+            local child = inst:FindFirstChild(childName)
+            if child and (child:IsA("IntValue") or child:IsA("NumberValue")) then
+                local n = math.floor(tonumber(child.Value) or 0)
+                if n > 0 then return n end
+            end
+        end
+        for name, value in pairs(inst:GetAttributes()) do
+            if typeof(value) == "number" then
+                local ln = string.lower(tostring(name))
+                if value > 0 and (ln:find("network", 1, true) or ln == "id" or ln:find("entity", 1, true) or ln == "eid") then
+                    return math.floor(value)
+                end
+            end
+        end
+        return nil
+    end
+
+    -- Halloween Aura: бьёт ВСЕ криттеры из workspace.Critters (те же цели что у скрипта)
+    local function startHalloweenAura()
+        if halloweenAuraRunning then return end
+        halloweenAuraRunning = true
+        task.spawn(function()
+            while halloweenAuraEnabled do
+                pcall(function()
+                    if not getPacketId("SwingTool") then return end
+                    local char = plr.Character
+                    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                    if not hrp then return end
+
+                    local folder = getWorkspaceCritters()
+                    if not folder then return end
+
+                    local hrpPos = hrp.Position
+                    local rangeSq = halloweenAuraRange * halloweenAuraRange
+                    local targets = {}
+
+                    for _, child in ipairs(folder:GetChildren()) do
+                        if isWorkspaceCritterInstance(child) and isWorkspaceCritterAlive(child) then
+                            local part = getWorkspaceCritterPart(child)
+                            local model = getWorkspaceCritterModel(child) or child
+                            if part and model then
+                                local eid = critterGetEntityId(model) or critterGetEntityId(part)
+                                if eid then
+                                    local diff = part.Position - hrpPos
+                                    local distSq = diff:Dot(diff)
+                                    if distSq <= rangeSq then
+                                        table.insert(targets, { eid = eid, pos = part.Position, distSq = distSq })
+                                    end
+                                end
+                            end
+                        end
+                    end
+
+                    if #targets > 0 then
+                        table.sort(targets, function(a, b) return a.distSq < b.distSq end)
+                        local maxPick = math.clamp(halloweenAuraTargetCount, 1, 9)
+                        local picked = {}
+                        for i = 1, math.min(#targets, maxPick) do
+                            table.insert(picked, { eid = targets[i].eid, pos = targets[i].pos })
+                        end
+                        if #picked > 0 then
+                            if fireByteNetSwingToolPackedMultiHit then
+                                fireByteNetSwingToolPackedMultiHit(picked, hrp, { maxTargets = maxPick })
+                            else
+                                fireByteNetSwingTool(picked, hrp, { maxPerPacket = maxPick })
+                            end
+                        end
+                    end
+                end)
+                task.wait(math.max(halloweenAuraCooldown, 0.02))
+            end
+            halloweenAuraRunning = false
+        end)
+    end
+
+    -- Auto Skip Countdown listener
+    task.spawn(function()
+        local mainGui = plr.PlayerGui:WaitForChild("MainGui", 15)
+        if not mainGui then return end
+        local panels = mainGui:WaitForChild("Panels", 5)
+        if not panels then return end
+        local bossbar = panels:WaitForChild("Bossbar", 5)
+        if not bossbar then return end
+        local skipBtn = bossbar:WaitForChild("SkipButton", 5)
+        if not skipBtn then return end
+
+        local lastSkip = 0
+        while task.wait(0.3) do
+            if autoSkipEnabled and skipBtn.Visible and skipBtn.Active then
+                if tick() - lastSkip > 1.5 then
+                    lastSkip = tick()
+                    pcall(function() firesignal(skipBtn.Activated) end)
+                end
+            end
+        end
+    end)
+
+    -- Auto Ready Up listener
+    task.spawn(function()
+        local playerGui = plr:WaitForChild("PlayerGui")
+        local hud = playerGui:WaitForChild("HalloweenWaveHUD", 20)
+        if not hud then return end
+        local results = hud:WaitForChild("Results", 15)
+        if not results then return end
+        local bottom = results:WaitForChild("Bottom", 10)
+        if not bottom then return end
+        local readyBtn = bottom:WaitForChild("Ready", 10)
+        if not readyBtn then return end
+
+        local lastReady = 0
+        while task.wait(0.3) do
+            if autoReadyEnabled
+                and readyBtn.Parent
+                and readyBtn.Visible
+                and readyBtn.Active
+                and results.Visible
+                and tick() - lastReady >= 1.5 then
+                lastReady = tick()
+                pcall(function() firesignal(readyBtn.Activated) end)
+            end
+        end
+    end)
+
+    -- ===== UI =====
+    CritterTab:AddLabel("Movement")
+
+    CritterTab:AddSlider("Fly Speed", 1, 100, 100, 1, function(v)
+        critterFlySpeed = v
+    end)
+
+    CritterTab:AddSlider("Orbit Radius", 1, 20, 5, 1, function(v)
+        critterOrbitRadius = v
+    end)
+
+    CritterTab:AddToggle("Sort By Size", true, function(v)
+        critterSortBySize = v
+    end)
+
+    CritterTab:AddToggle("Auto Orbit Critters", false, function(v)
+        if v then
+            critterOrbitLoop()
+        else
+            critterStopOrbit()
+        end
+    end)
+
+    CritterTab:AddLabel("Combat")
+
+    CritterTab:AddToggle("Halloween Aura", false, function(v)
+        halloweenAuraEnabled = v
+        if v then
+            startHalloweenAura()
+        else
+            halloweenAuraRunning = false
+        end
+    end)
+
+    CritterTab:AddSlider("Aura Range", 5, 200, 60, 5, function(v)
+        halloweenAuraRange = v
+    end)
+
+    CritterTab:AddSlider("Target Count", 1, 9, 3, 1, function(v)
+        halloweenAuraTargetCount = math.floor(v + 0.5)
+    end)
+
+    CritterTab:AddSlider("Swing Cooldown", 0.02, 1, 0.05, 0.01, function(v)
+        halloweenAuraCooldown = v
+    end)
+
+    CritterTab:AddLabel("Automation")
+
+    CritterTab:AddToggle("Auto Skip Countdown", true, function(v)
+        autoSkipEnabled = v
+    end)
+
+    CritterTab:AddToggle("Auto Ready Up", true, function(v)
+        autoReadyEnabled = v
+    end)
+end -- AsterCritterControl
 
 do -- AsterFinalize
 -- // 24/7 ANTI-AFK // --
