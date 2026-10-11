@@ -2201,7 +2201,7 @@ uiCorner(sidebar, UI.Radius.lg)
 uiStroke(sidebar, 1, 0.65)
 
 sidebarTitle = Instance.new("TextLabel", sidebar)
-sidebarTitle.Text = "krytouhub"
+sidebarTitle.Text = "whub"
 sidebarTitle.Size = UDim2.new(1, -16, 0, 22)
 sidebarTitle.Position = UDim2.fromOffset(14, 12)
 sidebarTitle.Font = UI.FontTitle
@@ -21695,7 +21695,7 @@ ASTER.Tabs.Planting = Window:AddTab({Title = "Farming", Icon = "rbxassetid://107
 ASTER.Tabs.Visuals = Window:AddTab({Title = "ESP / Visuals", Icon = "rbxassetid://122375159588547"})
 ASTER.Tabs.Settings = Window:AddTab({Title = "Settings", Icon = "rbxassetid://10734950309"})
 ASTER.Tabs.Config = Window:AddTab({Title = "Configs", Icon = "rbxassetid://92734085107015"})
-ASTER.Tabs.Critter = Window:AddTab({Title = "Critter Control", Icon = "rbxassetid://10734965572"})
+ASTER.Tabs.Critter = Window:AddTab({Title = "Hallowen", Icon = "rbxassetid://10734965572"})
 
 -- Compatibility stubs for older call sites.
 function restoreEventShotPassthrough() end
@@ -22136,7 +22136,7 @@ do
     local lastPlaceAt = 0
     local lastFallTriggered = false
     local wasAirborne = false
-    -- Previous-frame horizontal camera look + move vector (for "turned ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ place under" behavior).
+    -- Previous-frame horizontal camera look + move vector (for "turned ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ place under" behavior).
     local lastLookFlatXZ = nil
     local lastMoveDirForLeadXZ = nil
 
