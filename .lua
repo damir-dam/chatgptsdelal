@@ -712,6 +712,18 @@ if not ByteNetReliable then
     end)
 end
 
+-- Универсальная экипировка тула по слоту (пакет как у God Rock):
+-- buffer = [0, 45, slot]  →  "\000-" .. string.char(slot)
+function fireSlotEquip(slot)
+    slot = math.clamp(math.floor(tonumber(slot) or 1), 1, 6)
+    local bn = ByteNetReliable or ReplicatedStorage:FindFirstChild("ByteNetReliable")
+    if not bn then return false end
+    pcall(function()
+        bn:FireServer(buffer.fromstring(string.char(0, 45, slot)))
+    end)
+    return true
+end
+
 function autoDiscoverItemID(itemName)
     if not itemName or itemName == "" then return nil end
 
@@ -1860,7 +1872,7 @@ end
 do -- UI Scope Block
 CurrentTheme = Themes.Red
 GlobalTransparency = 0
-GradientsEnabled = true
+GradientsEnabled = false
 refreshThemeSurfaces()
 
 
@@ -5411,6 +5423,10 @@ Settings = {
     GoldCircuitEnabled = false,
     GoldAutoEquip = false, -- New Setting
     GoldHoeType = "Wood Hoe", -- New Setting
+    GodRockSlot = 1,
+    ShovelSlot = 1,
+    GodPickSlot = 2,
+    AutoEquipGodRock = false,
     recordedPositions = {},
     recordingPath = false,
     recordInterval = 1.0,
@@ -15465,6 +15481,7 @@ do -- AsterSandFarm
 local sandActive = false
 local sandSpot = nil
 local sandPhase = "dig" -- "dig" | "break"
+local sandCache = nil
 
 -- Порядок приоритета кирок (первая найденная — используется)
 local PICK_PRIORITY = {
@@ -15522,12 +15539,10 @@ local function isHoldingPick()
     return string.find(string.lower(equipped.Name), "pick", 1, true) ~= nil
 end
 
+-- Как у God Rock: просто шлём пакет слота. Вызывается ТОЛЬКО
+-- на смене фазы — один раз. Никаких проверок, никаких кулдаунов.
 local function ensureAnyPick()
-    if isHoldingPick() then return end
-    local pickName = getBestPickInInventory()
-    if pickName then
-        equipItemPacket(pickName)
-    end
+    fireSlotEquip(Settings.GodPickSlot or 2)
 end
 
 local function lockSandSpot()
@@ -15676,33 +15691,17 @@ local function collectSandFarmBreakTargets()
     return targets
 end
 
+-- Отправляет EquipTool пакет по слоту (как в Auto Equip God Rock).
+-- Формат: [0][45=packetId][slot]  ->  "\000-\00X"
+
+-- Как у God Rock: просто шлём пакет слота лопаты.
+-- Вызывается ТОЛЬКО на смене фазы — один раз.
 local function ensureShovel()
-    local playersFolder = workspace:FindFirstChild("Players")
-    local plrFolder = playersFolder and playersFolder:FindFirstChild(plr.Name)
-    local tools = plrFolder and plrFolder:FindFirstChild("Tools")
-    if tools and not tools:FindFirstChild("Shovel") and getToolSlot("Shovel") then
-        equipItemPacket("Shovel")
-    end
+    fireSlotEquip(Settings.ShovelSlot or 1)
 end
 
 local function ensureShovelOnly()
-    local char = plr.Character
-    if not char then return end
-    -- Снимаем кирку, если она надета
-    local equipped = char:FindFirstChildOfClass("Tool")
-    if equipped then
-        local lname = string.lower(equipped.Name)
-        if string.find(lname, "pick", 1, true) then
-            local hum = char:FindFirstChild("Humanoid")
-            if hum then hum:UnequipTools() end
-        end
-    end
     ensureShovel()
-    local bp = plr.Backpack:FindFirstChild("Shovel")
-    local hum = char:FindFirstChild("Humanoid")
-    if bp and hum and not char:FindFirstChild("Shovel") then
-        hum:EquipTool(bp)
-    end
 end
 
 -- Dig (captured):
@@ -15744,7 +15743,7 @@ end
 -- пока суммарный песок в инвентаре не достигнет SandAmount.
 -- ============================================================
 
-local MOUNDS_PER_CYCLE_MAX = 30  -- максимум кучек стакаем за один заход
+local MOUNDS_PER_CYCLE_MAX = 5  -- максимум кучек стакаем за один заход
 local sandBreakAttempts = 0
 
 function startAutoSand()
@@ -15759,6 +15758,7 @@ function startAutoSand()
 
     local function disableSelf()
         Settings.AutoSandEnabled = false
+        sandCache = nil
         local reg = Window and Window.ElementRegistry
             and Window.ElementRegistry["Auto Sand Farm (Turn on resource aura)"]
         if reg and reg.SetValue then
@@ -15769,11 +15769,25 @@ function startAutoSand()
     task.spawn(function()
         -- Сколько песка было на момент включения тоггла
         local startSand = getCurrentSandCount()
+        -- Один экип на смену фазы (dig ↔ break). Ничего больше не спамим.
+        local lastEquippedPhase = nil
 
         while Settings.AutoSandEnabled do
             pcall(function()
                 local spot = lockSandSpot()
                 if not spot then return end
+
+                -- === ЕДИНСТВЕННОЕ МЕСТО ЭКВИПА ===
+                -- dig  -> пакет слота лопаты (ShovelSlot)
+                -- break -> пакет слота кирки (GodPickSlot)
+                if sandPhase ~= lastEquippedPhase then
+                    lastEquippedPhase = sandPhase
+                    if sandPhase == "dig" then
+                        ensureShovelOnly()
+                    else
+                        ensureAnyPick()
+                    end
+                end
 
                 local targetAmount = getSandAmount()
                 Settings.SandAmount = targetAmount
@@ -15788,19 +15802,34 @@ function startAutoSand()
                     return
                 end
 
-                local delay = math.max(tonumber(Settings.SandFarmSpeed) or 0.08, 0.05)
+                local delay = math.max(tonumber(Settings.SandFarmSpeed) or 0.08, 0.08)
                 local moundCount = countSandMoundsAtSpot()
                 Settings.SandFarmDigCount = moundCount
 
                 if sandPhase == "dig" then
-                    -- === ФАЗА КОПАНИЯ ЛОПАТОЙ ===
-                    ensureShovelOnly()
+                    -- === ФАЗА КОПАНИЯ ЛОПАТОЙ (кэш) ===
+                    local nowClock = os.clock()
+                    if not sandCache then
+                        sandCache = {
+                            moundCount = 0,
+                            moundAt = 0,
+                            level1 = nil,
+                            level1At = 0,
+                            equipAt = 0,
+                        }
+                    end
+
+                    if nowClock - sandCache.moundAt > 0.5 then
+                        sandCache.moundAt = nowClock
+                        sandCache.moundCount = countSandMoundsAtSpot()
+                    end
+                    moundCount = sandCache.moundCount
+
                     local hrp = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
                     if hrp then
                         alignToSandFarmSpot(hrp, spot)
                     end
 
-                    -- Сколько кучек стакать в этом заходе (не больше остатка до цели)
                     local remaining = math.max(1, targetAmount - gainedThisSession)
                     local moundsThisCycle = math.min(MOUNDS_PER_CYCLE_MAX, remaining)
 
@@ -15808,11 +15837,16 @@ function startAutoSand()
                         sandPhase = "break"
                         Settings.SandFarmPhase = "break"
                         sandBreakAttempts = 0
-                        ensureAnyPick()
+                        sandCache.level1 = nil
                         task.wait(math.max(delay * 0.5, 0.03))
                     else
-                        local level1 = sandMoundAtSpot("_MOUND")
-                        local id = level1 and getSandMoundEntityId(level1)
+                        if not sandCache.level1
+                            or not sandCache.level1.Parent
+                            or (nowClock - sandCache.level1At > 1.0) then
+                            sandCache.level1At = nowClock
+                            sandCache.level1 = sandMoundAtSpot("_MOUND")
+                        end
+                        local id = sandCache.level1 and getSandMoundEntityId(sandCache.level1)
                         fireSandDig(spot, id)
                         task.wait(delay)
                     end
@@ -15830,7 +15864,6 @@ function startAutoSand()
                             return
                         end
 
-                        ensureAnyPick()
                         local hrp = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
                         if hrp then
                             local pileCenter = sandPileCenter(spot)
@@ -15871,7 +15904,6 @@ function startAutoSand()
                         sandPhase = "dig"
                         Settings.SandFarmPhase = "dig"
                         Settings.SandFarmDigCount = 0
-                        ensureShovelOnly()
                         local hrp = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
                         if hrp then
                             alignToSandFarmSpot(hrp, spot)
@@ -15885,6 +15917,7 @@ function startAutoSand()
 
         sandSpot = nil
         sandPhase = "dig"
+        sandCache = nil
         Settings.SandFarmSpot = nil
         Settings.SandFarmDigCount = 0
         Settings.SandFarmPhase = "dig"
@@ -28077,6 +28110,18 @@ ASTER.Tabs.Automation:AddSlider("Sand Amount", 1, 700000, Settings.SandAmount or
     Settings.SandAmount = math.floor(tonumber(v) or 1)
 end)
 
+ASTER.Tabs.Automation:AddDropdown("Shovel Slot", {"1","2","3","4","5","6"},
+    tostring(math.clamp(tonumber(Settings.ShovelSlot) or 1, 1, 6)),
+    function(v)
+        Settings.ShovelSlot = math.clamp(math.floor(tonumber(v) or 1), 1, 6)
+    end)
+
+ASTER.Tabs.Automation:AddDropdown("God Pick Slot", {"1","2","3","4","5","6"},
+    tostring(math.clamp(tonumber(Settings.GodPickSlot) or 1, 1, 6)),
+    function(v)
+        Settings.GodPickSlot = math.clamp(math.floor(tonumber(v) or 2), 1, 6)
+    end)
+
         task.defer(function()
             if Settings.SelectedPotion then
                 resolvePotionCraftID(Settings.SelectedPotion)
@@ -30920,7 +30965,7 @@ end)
         Window:UpdateTransparency(s and 0.45 or 0) 
     end)
 
-    ASTER.Tabs.Settings:AddToggle("Gradients", true, function(s) 
+    ASTER.Tabs.Settings:AddToggle("Gradients", false, function(s) 
         GradientsEnabled = s; 
         
         if not CurrentTheme then
@@ -30965,7 +31010,8 @@ do -- AsterCritterControl
 
     local autoSkipEnabled = true
     local autoReadyEnabled = true
-    local autoEquipGodRock = true   -- по умолчанию ВКЛ
+    local autoEquipGodRock = false         -- по умолчанию ВКЛ
+    local godRockSlot = tonumber(Settings.GodRockSlot) or 1  -- слот 1..6
 
     -- ===== MOVEMENT HELPERS =====
     local critterNoclipConn = nil
@@ -31313,19 +31359,20 @@ do -- AsterCritterControl
     -- Если God Rock не в руках — шлём твой пакет и надеваем.
     -- Если уже в руках — молчим. Проверка каждые 1.5 сек.
     local function fireGodRockPacket()
-        local bn = game:GetService("ReplicatedStorage"):FindFirstChild("ByteNetReliable")
-        if not bn then
-            bn = game:GetService("ReplicatedStorage"):WaitForChild("ByteNetReliable", 5)
-        end
-        if not bn then return false end
-        pcall(function()
-            local args = {
-                buffer.fromstring("\000-\001")
-            }
-            bn:FireServer(unpack(args))
-        end)
-        return true
+    local bn = game:GetService("ReplicatedStorage"):FindFirstChild("ByteNetReliable")
+    if not bn then
+        bn = game:GetService("ReplicatedStorage"):WaitForChild("ByteNetReliable", 5)
     end
+    if not bn then return false end
+    pcall(function()
+        local slot = math.clamp(math.floor(tonumber(godRockSlot) or 1), 1, 6)
+        local args = {
+            buffer.fromstring("\000-" .. string.char(slot))
+        }
+        bn:FireServer(unpack(args))
+    end)
+    return true
+end
 
     task.spawn(function()
         while true do
@@ -31395,9 +31442,16 @@ do -- AsterCritterControl
         autoReadyEnabled = v
     end)
 
-    CritterTab:AddToggle("Auto Equip God Rock", true, function(v)
+    CritterTab:AddToggle("Auto Equip God Rock", false, function(v)
         autoEquipGodRock = v
+        Settings.AutoEquipGodRock = v
     end)
+
+    CritterTab:AddDropdown("God Rock Slot", {"1", "2", "3", "4", "5", "6"}, tostring(godRockSlot or 1), function(v)
+    local n = tonumber(v) or 1
+    godRockSlot = math.clamp(math.floor(n), 1, 6)
+    Settings.GodRockSlot = godRockSlot
+end)
 end -- AsterCritterControl
 
 do -- AsterFinalize
