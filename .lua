@@ -6553,18 +6553,20 @@ function fireByteNetSwingTool(targetEntries, hrp, opts)
         local fromPos = computeFromPos()
         local cf = opts.cframe or cframeForBatch(batch, fromPos)
         -- 2 header + 18 cframe + 2 count + 5*n hits + 8 time
-        local b = buffer.create(30 + 5 * n)
-        buffer.writeu8(b, 0, 0)
-        buffer.writeu8(b, 1, swingId)
-        write18ByteCFrame(b, 2, cf)
-        buffer.writeu16(b, 20, n)
-        local o = 22
-        for _, t in ipairs(batch) do
-            buffer.writeu8(b, o, 0)
-            buffer.writeu32(b, o + 1, math.floor(tonumber(t.eid) or 0))
-            o = o + 5
-        end
-        buffer.writef64(b, o, baseTime + (pktIdx * timeStep))
+        -- СТАЛО:
+local b = buffer.create(29 + 3 * n)        -- было 30 + 5*n
+buffer.writeu8(b, 0, 0)
+buffer.writeu8(b, 1, swingId)
+write18ByteCFrame(b, 2, cf)
+buffer.writeu8(b, 20, n)                   -- было writeu16
+local o = 21                               -- было 22
+for _, t in ipairs(batch) do
+    local eid = math.floor(tonumber(t.eid) or 0)
+    buffer.writeu8(b, o, 0)
+    buffer.writeu16(b, o + 1, eid % 65536) -- было writeu32
+    o = o + 3                              -- было o + 5
+end
+buffer.writef64(b, o, baseTime + (pktIdx * timeStep))
         trackWebhookResourceBreaks(batch)
         ByteNetReliable:FireServer(b)
     end
