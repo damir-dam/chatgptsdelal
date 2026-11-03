@@ -6535,7 +6535,7 @@ function fireByteNetSwingTool(targetEntries, hrp, opts)
 
     local maxPerPacket = math.clamp(opts.maxPerPacket or 32, 1, 64)
     local timeStep = opts.timeStep or 0.01
-    local baseTime = opts.baseTime or (time() - timeStep)
+    local baseTime = opts.baseTime or (tick() - timeStep)
     local run = game:GetService("RunService")
     local pktIdx = 0
 
