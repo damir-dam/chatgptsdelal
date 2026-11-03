@@ -2213,7 +2213,7 @@ uiCorner(sidebar, UI.Radius.lg)
 uiStroke(sidebar, 1, 0.65)
 
 sidebarTitle = Instance.new("TextLabel", sidebar)
-sidebarTitle.Text = "whaub"
+sidebarTitle.Text = "whub"
 sidebarTitle.Size = UDim2.new(1, -16, 0, 22)
 sidebarTitle.Position = UDim2.fromOffset(14, 12)
 sidebarTitle.Font = UI.FontTitle
@@ -6487,7 +6487,7 @@ function fireByteNetSwingTool(targetEntries, hrp, opts)
     if #clean == 0 then return end
     targetEntries = clean
 
-    local swingId = getPacketId("SwingTool")
+    local swingId = getPacketId("SwingTool") or 49 -- Жестко ставим 49, если getPacketId не находит
     if not swingId then return end
 
     local function computeFromPos()
@@ -6535,7 +6535,10 @@ function fireByteNetSwingTool(targetEntries, hrp, opts)
 
     local maxPerPacket = math.clamp(opts.maxPerPacket or 32, 1, 64)
     local timeStep = opts.timeStep or 0.01
-    local baseTime = opts.baseTime or (tick() - timeStep)
+    
+    -- ВОТ ГЛАВНОЕ ИСПРАВЛЕНИЕ: Используем серверное время вместо time()
+    local baseTime = opts.baseTime or (workspace:GetServerTimeNow() - timeStep)
+    
     local run = game:GetService("RunService")
     local pktIdx = 0
 
@@ -6552,25 +6555,23 @@ function fireByteNetSwingTool(targetEntries, hrp, opts)
         local n = #batch
         local fromPos = computeFromPos()
         local cf = opts.cframe or cframeForBatch(batch, fromPos)
-        -- 2 header + 18 cframe + 2 count + 5*n hits + 8 time
-        -- СТАЛО:
-local b = buffer.create(29 + 3 * n)        -- было 30 + 5*n
-buffer.writeu8(b, 0, 0)
-buffer.writeu8(b, 1, swingId)
-write18ByteCFrame(b, 2, cf)
-buffer.writeu8(b, 20, n)                   -- было writeu16
-local o = 21                               -- было 22
-for _, t in ipairs(batch) do
-    local eid = math.floor(tonumber(t.eid) or 0)
-game:GetService("StarterGui"):SetCore("SendNotification", {
-    Title = "Aura Debug", 
-    Text = "ID цели: " .. tostring(eid)
-})
-    buffer.writeu8(b, o, 0)
-    buffer.writeu16(b, o + 1, eid % 65536) -- было writeu32
-    o = o + 3                              -- было o + 5
-end
-buffer.writef64(b, o, baseTime + (pktIdx * timeStep))
+        
+        -- Твой правильный формат пакета
+        local b = buffer.create(29 + 3 * n)
+        buffer.writeu8(b, 0, 0)
+        buffer.writeu8(b, 1, swingId)
+        write18ByteCFrame(b, 2, cf)
+        buffer.writeu8(b, 20, n)
+        
+        local o = 21
+        for _, t in ipairs(batch) do
+            local eid = math.floor(tonumber(t.eid) or 0)
+            buffer.writeu8(b, o, 0)
+            buffer.writeu16(b, o + 1, eid % 65536)
+            o = o + 3
+        end
+        buffer.writef64(b, o, baseTime + (pktIdx * timeStep))
+        
         trackWebhookResourceBreaks(batch)
         ByteNetReliable:FireServer(b)
     end
