@@ -6302,16 +6302,15 @@ local function collectHarvestNear(originPos, range, fruitFilter, cropsMode)
     return found
 end
 
--- Pickup (captured): [0][Pickup][u32 eid]  -- 6 bytes (no item id)
 function fireByteNetPickup(eid)
     if not ByteNetReliable then return false end
     local pickupId = getPacketId("Pickup")
     local id = math.floor(tonumber(eid) or 0)
     if not pickupId or id <= 0 then return false end
-    local b = buffer.create(6)
+    local b = buffer.create(4) -- БЫЛО 6
     buffer.writeu8(b, 0, 0)
     buffer.writeu8(b, 1, pickupId)
-    buffer.writeu32(b, 2, id)
+    buffer.writeu16(b, 2, id % 65536) -- БЫЛО writeu32
     ByteNetReliable:FireServer(b)
     return true
 end
@@ -6705,15 +6704,15 @@ function drop(itemName)
     end
 end
 
-local _plantBuf = buffer.create(8)
+local _plantBuf = buffer.create(6) -- БЫЛО 8
 function plant(eid, itemID)
     if not ByteNetReliable then return end
     local interactPacketId = getPacketId("InteractStructure")
     if not interactPacketId then return end
     buffer.writeu8(_plantBuf, 0, 0)
     buffer.writeu8(_plantBuf, 1, interactPacketId)
-    buffer.writeu32(_plantBuf, 2, eid)
-    buffer.writeu16(_plantBuf, 6, itemID)
+    buffer.writeu16(_plantBuf, 2, math.floor(eid) % 65536) -- БЫЛО writeu32
+    buffer.writeu16(_plantBuf, 4, itemID) -- БЫЛО смещение 6
     ByteNetReliable:FireServer(_plantBuf)
     plantedboxes[eid] = os.clock()
     local ws = __ASTER_RUNTIME.webhookStats
@@ -14163,11 +14162,11 @@ local function executeHealFruit()
 
     local actionId = getPacketId("UseBagItem")
     if not actionId then return end
-    local b = buffer.create(8)
-    buffer.writeu8(b, 0, 0)
-    buffer.writeu8(b, 1, actionId)
-    buffer.writeu32(b, 2, slotID)
-    buffer.writeu16(b, 6, fruitID)
+    local b = buffer.create(6)
+buffer.writeu8(b, 0, 0)
+buffer.writeu8(b, 1, actionId)
+buffer.writeu16(b, 2, slotID)
+buffer.writeu16(b, 4, fruitID)
     ByteNetReliable:FireServer(b)
 end
 
@@ -18700,11 +18699,11 @@ function eatDownToCap(fruitName, cap)
                 if not (Settings.WasteFruitsEnabled or Settings.EatCapEnabled) then break end
                 pcall(function() 
                     local actionId = getPacketId("UseBagItem")
-                    local b = buffer.create(8)
-                    buffer.writeu8(b, 0, 0)
-                    buffer.writeu8(b, 1, actionId)
-                    buffer.writeu32(b, 2, slotID)
-                    buffer.writeu16(b, 6, fruitID)
+                    local b = buffer.create(6)
+buffer.writeu8(b, 0, 0)
+buffer.writeu8(b, 1, actionId)
+buffer.writeu16(b, 2, slotID)
+buffer.writeu16(b, 4, fruitID)
                     if ByteNetReliable then ByteNetReliable:FireServer(b) end
                 end)
                 task.wait(0.25) 
@@ -18986,14 +18985,13 @@ function fireSaddleOnAnimal(targetId)
     if not ByteNetReliable then return end
     targetId = math.floor(tonumber(targetId) or 0)
     if targetId <= 0 then return end
-
     local actionId = getSaddleApplyPacketId()
     if not actionId then return end
-    local b = buffer.create(7)
+    local b = buffer.create(5) -- БЫЛО 7
     buffer.writeu8(b, 0, 0)
     buffer.writeu8(b, 1, actionId)
     buffer.writeu8(b, 2, 1)
-    buffer.writeu32(b, 3, targetId)
+    buffer.writeu16(b, 3, targetId % 65536) -- БЫЛО writeu32
     ByteNetReliable:FireServer(b)
 end
 
@@ -21137,11 +21135,11 @@ function startAutoEat()
                          if slotID then 
                              pcall(function()
                                  local actionId = getPacketId("UseBagItem")
-                                 local b = buffer.create(8)
-                                 buffer.writeu8(b, 0, 0)
-                                 buffer.writeu8(b, 1, actionId)
-                                 buffer.writeu32(b, 2, slotID)
-                                 buffer.writeu16(b, 6, fruitID)
+                                 local b = buffer.create(6)
+buffer.writeu8(b, 0, 0)
+buffer.writeu8(b, 1, actionId)
+buffer.writeu16(b, 2, slotID)
+buffer.writeu16(b, 4, fruitID)
                                  if ByteNetReliable then ByteNetReliable:FireServer(b) end
                              end)
                              local delayTime = 1 / (Settings.HealCPS or 1)
