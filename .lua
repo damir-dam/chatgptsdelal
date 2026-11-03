@@ -31291,7 +31291,7 @@ do -- AsterCritterControl
                 if tick() - lastSkip > 1.5 then
                     lastSkip = tick()
                     pcall(function()
-                        local b = buffer.fromstring("\000\227\003\000\000\000\000\000\000\000\000")
+                        local b = buffer.fromstring("\000\228\003\000\000\000\000\000\000\000\000")
                         bn:FireServer(b)
                     end)
                 end
@@ -31324,7 +31324,7 @@ do -- AsterCritterControl
                 and tick() - lastReady >= 1.5 then
                 lastReady = tick()
                 pcall(function()
-                    local b = buffer.fromstring("\000\227\000\000\000\000\000\000\000\240?")
+                    local b = buffer.fromstring("\000\228\000\000\000\000\000\000\000\240?")
                     bn:FireServer(b)
                 end)
             end
