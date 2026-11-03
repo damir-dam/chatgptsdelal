@@ -6562,6 +6562,10 @@ buffer.writeu8(b, 20, n)                   -- было writeu16
 local o = 21                               -- было 22
 for _, t in ipairs(batch) do
     local eid = math.floor(tonumber(t.eid) or 0)
+game:GetService("StarterGui"):SetCore("SendNotification", {
+    Title = "Aura Debug", 
+    Text = "ID цели: " .. tostring(eid)
+})
     buffer.writeu8(b, o, 0)
     buffer.writeu16(b, o + 1, eid % 65536) -- было writeu32
     o = o + 3                              -- было o + 5
