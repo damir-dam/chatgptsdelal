@@ -2213,7 +2213,7 @@ uiCorner(sidebar, UI.Radius.lg)
 uiStroke(sidebar, 1, 0.65)
 
 sidebarTitle = Instance.new("TextLabel", sidebar)
-sidebarTitle.Text = "wahub"
+sidebarTitle.Text = "whub"
 sidebarTitle.Size = UDim2.new(1, -16, 0, 22)
 sidebarTitle.Position = UDim2.fromOffset(14, 12)
 sidebarTitle.Font = UI.FontTitle
@@ -5657,6 +5657,9 @@ Settings = {
     CritterCooldown = 0.08,
     CritterSwingPackedMultiHit = true,
     CritterType = "All",
+    -- Auto Buy Gold Bundle
+    AutoBuyGoldBundleEnabled = false,
+    AutoBuyGoldBundleDelay = 0.01,
 
     
     -- Critter ESP
@@ -31457,6 +31460,43 @@ end
     godRockSlot = math.clamp(math.floor(n), 1, 6)
     Settings.GodRockSlot = godRockSlot
 end)
+
+    -- ===== Auto Buy Gold Bundle =====
+    local autoBuyGoldBundleEnabled = false
+    local autoBuyGoldBundleDelay = 0.01
+    local autoBuyGoldBundleRunning = false
+
+    local function startAutoBuyGoldBundle()
+        if autoBuyGoldBundleRunning then return end
+        autoBuyGoldBundleRunning = true
+        task.spawn(function()
+            while autoBuyGoldBundleEnabled do
+                pcall(function()
+                    local bn = game:GetService("ReplicatedStorage"):FindFirstChild("ByteNetReliable")
+                        or game:GetService("ReplicatedStorage"):WaitForChild("ByteNetReliable", 5)
+                    if not bn then return end
+                    local b = buffer.fromstring("\000\226\vGold Bundle")
+                    bn:FireServer(b)
+                end)
+                task.wait(autoBuyGoldBundleDelay)
+            end
+            autoBuyGoldBundleRunning = false
+        end)
+    end
+
+    CritterTab:AddLabel("Gold Bundle")
+
+    CritterTab:AddToggle("Auto Buy Gold Bundle", false, function(v)
+        autoBuyGoldBundleEnabled = v
+        if v then
+            startAutoBuyGoldBundle()
+        end
+    end)
+
+    CritterTab:AddSlider("Buy Gold Bundle Delay", 0.01, 2, 0.01, 0.01, function(v)
+        autoBuyGoldBundleDelay = v
+    end)
+
 end -- AsterCritterControl
 
 do -- AsterFinalize
