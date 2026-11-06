@@ -1,3 +1,127 @@
+-- LocalScript: Werder Cheater Intro
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+-- Убираем старую заставку
+local old = playerGui:FindFirstChild("NerfgeiIntro")
+if old then old:Destroy() end
+
+-- === GUI ===
+local gui = Instance.new("ScreenGui")
+gui.Name = "NerfgeiIntro"
+gui.ResetOnSpawn = false
+gui.IgnoreGuiInset = true
+gui.DisplayOrder = 999
+gui.Parent = playerGui
+
+-- Затемнение
+local fade = Instance.new("Frame")
+fade.Size = UDim2.fromScale(1, 1)
+fade.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+fade.BackgroundTransparency = 1
+fade.BorderSizePixel = 0
+fade.ZIndex = 1
+fade.Parent = gui
+
+-- === Настройки ===
+-- Первая W большая, остальные буквы маленькие. Подобрана ширина (w) под каждую букву.
+local chars = {
+    {ch = "w", size = 72, w = 55, h = 90},   -- большая W
+    {ch = "e", size = 44, w = 26, h = 50},
+    {ch = "r", size = 44, w = 20, h = 50},
+    {ch = "d", size = 44, w = 28, h = 50},
+    {ch = "e", size = 44, w = 26, h = 50},
+    {ch = "r", size = 44, w = 20, h = 50},
+    {ch = " ", size = 1,  w = 16, h = 10},   -- пробел между werder и cheater
+    {ch = "c", size = 44, w = 24, h = 50},
+    {ch = "h", size = 44, w = 28, h = 50},
+    {ch = "e", size = 44, w = 26, h = 50},
+    {ch = "a", size = 44, w = 26, h = 50},
+    {ch = "t", size = 44, w = 18, h = 50},
+    {ch = "e", size = 44, w = 26, h = 50},
+    {ch = "r", size = 44, w = 20, h = 50},
+}
+
+-- Считаем общую ширину
+local totalW = 0
+for _, c in ipairs(chars) do totalW += c.w end
+
+-- Позиция каждого элемента в центре экрана (AnchorPoint 0.5, 0.5)
+local function finalPos(i)
+    local xOff = -totalW / 2
+    for j = 1, i - 1 do
+        xOff += chars[j].w
+    end
+    xOff += chars[i].w / 2
+    return UDim2.new(0.5, xOff, 0.5, 0)
+end
+
+-- === Создание букв ===
+local letters = {}
+for i, c in ipairs(chars) do
+    local lbl = Instance.new("TextLabel")
+    lbl.Name = "L" .. i
+    lbl.AnchorPoint = Vector2.new(0.5, 0.5)
+    lbl.Size = UDim2.fromOffset(c.w, c.h)
+    lbl.BackgroundTransparency = 1
+    lbl.Font = Enum.Font.PatrickHand
+    lbl.Text = c.ch
+    lbl.TextSize = c.size
+    lbl.TextColor3 = Color3.fromRGB(230, 30, 30)     -- красный
+    lbl.TextStrokeTransparency = 0
+    lbl.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)   -- чёрная обводка
+    -- старт за экраном справа-сверху
+    lbl.Position = UDim2.new(1.2, 0, -0.15, 0)
+    lbl.ZIndex = 2
+    lbl.Parent = gui
+    table.insert(letters, lbl)
+end
+
+-- === 1. Плавно затемняем экран ===
+TweenService:Create(
+    fade,
+    TweenInfo.new(0.8, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+    { BackgroundTransparency = 0.05 }
+):Play()
+
+task.wait(0.5)
+
+-- === 2. Буквы по одной прилетают из правого верхнего угла в центр ===
+for i, lbl in ipairs(letters) do
+    TweenService:Create(
+        lbl,
+        TweenInfo.new(0.75, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+        { Position = finalPos(i) }
+    ):Play()
+    task.wait(0.3)
+end
+
+-- === 3. Заставка держится ===
+task.wait(3)
+
+-- === 4. Затемнение и буквы уходят одновременно (ускоренный улёт) ===
+TweenService:Create(
+    fade,
+    TweenInfo.new(2.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+    { BackgroundTransparency = 1 }
+):Play()
+
+-- Буквы уходят в правый нижний угол, начиная С КОНЦА
+for i = #letters, 1, -1 do
+    local lbl = letters[i]
+    TweenService:Create(
+        lbl,
+        TweenInfo.new(0.65, Enum.EasingStyle.Quad, Enum.EasingDirection.In),  -- ускорено
+        { Position = UDim2.new(1.2, 0, 1.15, 0) }
+    ):Play()
+    task.wait(0.2) -- ускорено
+end
+
+task.wait(1.2)
+gui:Destroy()
+
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 TweenService = game:GetService("TweenService")
